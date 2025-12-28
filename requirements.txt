@@ -1,0 +1,5 @@
+pytest>=9.0.0
+pathlib>=1.0.0
+setuptools>=80.0.0
+pydantic-ai>=1.39.0
+fastapi>=0.128.0

@@ -1,12 +1,23 @@
+import os
 from typing import List, AsyncGenerator
 
 from pydantic_ai import Agent, AgentRunResultEvent, FunctionToolCallEvent, FunctionToolResultEvent, PartDeltaEvent, PartEndEvent, PartStartEvent, RetryPromptPart, TextPart, TextPartDelta, ToolCallPart, BuiltinToolCallPart, BuiltinToolReturnPart, ThinkingPart, FilePart, ToolReturnPart, ModelMessage
 from pydantic_ai.models.anthropic import AnthropicModel
 
-from tools import files
+from server.tools import files
+from server.app import get_app
 
-_SYS_PROMPT = """
+_DEFAULT_SYS_PROMPT = f"""
 You are a basic coding assistant. Use the provided tools to edit files based on user instruction
+"""
+
+def _sys_prompt_with_dirs() -> str:
+    app = get_app()
+    dirs = [str(path) for path in app.get_allowed_paths()]
+
+    return f"""
+{_DEFAULT_SYS_PROMPT}
+allowed directories:{'\n'.join(dirs)}
 """
     
 async def editor_run(prompt: str, message_history: List[ModelMessage]) -> str:
@@ -14,7 +25,7 @@ async def editor_run(prompt: str, message_history: List[ModelMessage]) -> str:
     model = AnthropicModel('claude-haiku-4-5')
     agent = Agent(
         model,
-        system_prompt=_SYS_PROMPT,
+        system_prompt=_sys_prompt_with_dirs(),
         tools=files.get_pydantic_tools()
     )
     result = await agent.run(prompt, message_history=message_history)
@@ -36,7 +47,7 @@ async def editor_run_stream(prompt: str, message_history: List[ModelMessage]) ->
     model = AnthropicModel('claude-haiku-4-5')
     agent = Agent(
         model,
-        system_prompt=_SYS_PROMPT,
+        system_prompt=_sys_prompt_with_dirs(),
         tools=files.get_pydantic_tools()
     )
     

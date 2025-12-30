@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime
 from pydantic_ai import Tool
 
-from app import get_app
+from server.app import get_app
 
 def _check_access(filepath: str) -> bool:
     """Check if the app allows access to this filepath"""
@@ -144,11 +144,49 @@ def delete(filepath: str, start_line: int, end_line: int) -> str:
         # Convert from 1-indexed to 0-indexed for Python slicing
         # end_line + 1 because slice is exclusive on the right
         del content[start_line - 1:end_line]
-        
+
         with open(filepath, 'w') as file:
             file.write(''.join(content))
         
         return f"success: deleted lines {start_line}-{end_line}"
+    except Exception as e:
+        return f"error: {e}"
+        
+def rm(filepath: str, recursive: bool = False) -> str:
+    """
+    Delete a file or directory.
+    
+    Args:
+        filepath: Path to the file or directory to delete
+        recursive: If True, recursively delete directories and their contents
+    
+    Returns:
+        Success message, or error message
+    
+    Example:
+        rm('/path/to/file.txt') deletes a file
+        rm('/path/to/directory', recursive=True) deletes directory and contents
+    """
+    if not _check_access(filepath):
+        return "error: access denied to this path"
+    
+    try:
+        path = Path(filepath)
+        
+        if not path.exists():
+            return f"error: path does not exist: {filepath}"
+        
+        if path.is_file():
+            path.unlink()
+            return f"success: deleted file: {filepath}"
+        elif path.is_dir():
+            if recursive:
+                shutil.rmtree(path)
+                return f"success: deleted directory recursively: {filepath}"
+            else:
+                return f"error: {filepath} is a directory. Use recursive=True to delete directories."
+        else:
+            return f"error: {filepath} is not a file or directory"
     except Exception as e:
         return f"error: {e}"
 
@@ -195,5 +233,6 @@ def get_pydantic_tools() -> List[Tool]:
         Tool(grep, takes_ctx=False),
         Tool(touch, takes_ctx=False),
         Tool(delete, takes_ctx=False),
+        Tool(rm, takes_ctx=False),
         Tool(insert, takes_ctx=False),
     ]

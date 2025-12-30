@@ -1,4 +1,4 @@
-from app import App
+from server.app import App
 from pathlib import Path
 
 def test_basic_valid_access():

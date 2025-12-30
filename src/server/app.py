@@ -9,6 +9,9 @@ class App:
             return
         self._allowed_paths.append(path)
 
+    def get_allowed_paths(self) -> list[Path]:
+        return self._allowed_paths
+
     def can_access(self, path: Path) -> bool:
         for allowed_path in self._allowed_paths:
             if path.is_relative_to(allowed_path):

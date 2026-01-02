@@ -13,9 +13,9 @@
 
 ## Layout
 
-Four-panel layout:
+Five-panel layout:
 - **Header** - Title and processing status indicator
-- **Messages** - Last 20 messages with user/agent distinction
+- **Messages** - Last 20 messages with user/agent distinction (scrolls automatically)
 - **Status** - Server health, message count, directory count
 - **Input** - Multi-line input area (up to 5 lines visible)
 - **Footer** - Quick command reference
@@ -23,8 +23,7 @@ Four-panel layout:
 ## Usage
 
 ```bash
-python src/main.py          # Default: fullscreen TUI mode
-python src/main.py --cli    # Legacy CLI mode
+python src/main.py          # Run fullscreen TUI editor
 ```
 
 ## Implementation
@@ -33,6 +32,11 @@ python src/main.py --cli    # Legacy CLI mode
 - Manages message history locally
 - Routes commands through `_handle_command()`
 - Streams agent responses directly into history
+- Non-blocking input via async executor
+
+## Multi-Line Input
+
+Input is line-buffered. Type normally and press Enter to accumulate lines, then send the complete message.
 - Non-blocking input via async executor
 
 ## Multi-Line Input

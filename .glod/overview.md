@@ -1,6 +1,6 @@
 # GLOD: AI Code Editor
 
-Client-server AI code editor. Agent runs on FastAPI (port 8000), client communicates via HTTP RPC. Message history stored client-side.
+Fullscreen TUI AI code editor. Agent runs on FastAPI (port 8000), client communicates via HTTP RPC. Message history stored client-side.
 
 ## Components
 - **Entry Point** (`src/main.py`) - Initializes CLI and runs interactive loop

@@ -12,8 +12,10 @@ Features:
 import asyncio
 import os
 import sys
+import fcntl
 from typing import Optional
 from pathlib import Path
+
 
 from rich.console import Console
 from rich.layout import Layout
@@ -112,65 +114,62 @@ class GlodTUIEditor:
             Layout(name="footer", size=3),
         )
         layout["main"].split_column(
-            Layout(name="messages"),
-            Layout(name="status", size=1),
-            Layout(name="input", size=5),
-        )
-        return layout
-    
-    def _update_layout(self, layout: Layout) -> None:
-        """Update layout with current state"""
-        # Header
-        header_text = "🔮 [bold cyan]GLOD AI Editor[/bold cyan]"
-        if self.is_processing:
-            header_text += " [bold yellow]⏳ Processing...[/bold yellow]"
-        layout["header"].update(Panel(header_text, style="cyan", padding=(0, 1)))
+    async def run(self) -> None:
+        """Main TUI loop"""
+        # Save original terminal settings
+        original_settings = None
+        if tty and termios:
+            try:
+                original_settings = termios.tcgetattr(sys.stdin)
+                tty.setraw(sys.stdin.fileno())
+            except:
+                pass
         
-        # Messages panel
-        messages_text = self._render_messages()
-        layout["messages"].update(Panel(messages_text, style="blue", border_style="blue"))
+        try:
+            # Clear screen and show welcome
+            self.console.clear()
+            self.console.print(Panel("🔮 [bold cyan]GLOD AI Editor[/bold cyan] - Fullscreen Mode", style="cyan", padding=(0, 1)))
+            self.console.print("[dim]Loading...[/dim]\n")
+            
+            # Create layout
+            layout = self._create_layout()
+            
+            with Live(layout, refresh_per_second=4, screen=True) as live:
+                while not self.exit_requested:
+                    # Update layout
+                    self._update_layout(layout)
+                    live.update(layout)
+                    
+                    # Get user input (non-blocking)
+                    try:
+                        user_input = await asyncio.wait_for(
+                            self._get_input_async(), 
+                            timeout=0.25
+                        )
+                        
+                        if user_input is not None:
+                            if user_input.startswith("/"):
+                                await self._handle_command(user_input)
+                            else:
+                                await self._send_message(user_input)
+                            self.input_buffer = ""
+                    except asyncio.TimeoutError:
+                        # No input available, keep updating display
+                        pass
+                    except EOFError:
+                        break
         
-        # Status bar
-        status = self._render_status()
-        layout["status"].update(status)
-        
-        # Input panel
-        input_panel = self._render_input()
-        layout["input"].update(Panel(input_panel, title="[bold yellow]Input (Enter to submit)[/bold yellow]", style="yellow", padding=(0, 1)))
-        
-        # Footer
-        footer = self._render_footer()
-        layout["footer"].update(footer)
-    
-    def _render_messages(self) -> str:
-        """Render message history"""
-        if not self.messages:
-            return "[dim]No messages yet. Type a message to begin![/dim]"
-        
-        # Show last 20 messages to avoid overwhelming display
-        visible_messages = self.messages[-20:]
-        
-        lines = []
-        for role, content in visible_messages:
-            if role == "user":
-                # Show user message - truncate if very long
-                content_lines = content.split("\n")
-                for i, line in enumerate(content_lines[:3]):  # Show first 3 lines
-                    if i == 0:
-                        lines.append(f"[bold yellow]You:[/bold yellow] {line[:80]}")
-                    else:
-                        lines.append(f"    {line[:80]}")
-                if len(content_lines) > 3:
-                    lines.append(f"    [dim]... ({len(content_lines) - 3} more lines)[/dim]")
-            else:
-                # Show agent message
-                content_lines = content.split("\n")
-                for i, line in enumerate(content_lines[:5]):  # Show first 5 lines
-                    if i == 0:
-                        lines.append(f"[bold cyan]Agent:[/bold cyan] {line[:80]}")
-                    else:
-                        lines.append(f"    {line[:80]}")
-                if len(content_lines) > 5:
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # Restore original terminal settings
+            if original_settings and tty and termios:
+                try:
+                    termios.tcsetattr(sys.stdin, termios.TCSAFLUSH, original_settings)
+                except:
+                    pass
+            self.console.clear()
+
                     lines.append(f"    [dim]... ({len(content_lines) - 5} more lines)[/dim]")
             lines.append("")  # Blank line between messages
         
@@ -220,54 +219,61 @@ class GlodTUIEditor:
                 if self.input_buffer:
                     self.input_buffer = self.input_buffer[:-1]
             elif char == '\x03':  # Ctrl+C
+    async def _get_input_async(self) -> Optional[str]:
+        """Get user input asynchronously using non-blocking stdin"""
+        loop = asyncio.get_event_loop()
+        
+        # Read a single line of input
+        try:
+            char = await loop.run_in_executor(None, self._read_char_nonblocking)
+            
+            if char is None:
+                return None
+            
+            # Handle special keys
+            if char == '\r' or char == '\n':
+                # User pressed enter - return the current buffer
+                result = self.input_buffer
+                self.input_buffer = ""
+                return result if result else None
+            elif char == '\x04':  # Ctrl+D
+                # EOF/exit signal
+                raise EOFError()
+            elif char == '\x08' or char == '\x7f':  # Backspace
+                # Delete last character
+                if self.input_buffer:
+                    self.input_buffer = self.input_buffer[:-1]
+            elif char == '\x03':  # Ctrl+C
                 raise KeyboardInterrupt()
-            elif char.isprintable() or char == '\t':
+            elif ord(char) >= 32:  # Printable ASCII characters
                 # Add to input buffer
                 self.input_buffer += char
-            
-            return None  # Still building input
-        except (EOFError, KeyboardInterrupt):
-            raise
-    
     def _read_char_nonblocking(self) -> Optional[str]:
         """Read a single character without blocking"""
-        import select
-        import sys
-        
-        # Check if input is available
-        if select.select([sys.stdin], [], [], 0)[0]:
-            try:
-                return sys.stdin.read(1)
-            except:
-                return None
-        return None
-    
-    async def _send_message(self, prompt: str) -> None:
-        """Send a message to the agent"""
-        # Add user message to history
-        self.messages.append(("user", prompt))
-        self.is_processing = True
-        
         try:
-            # Set up event handlers for streaming
-            response_buffer = []
+            # Set O_NONBLOCK flag if not already set
+            flags = fcntl.fcntl(sys.stdin.fileno(), fcntl.F_GETFL)
+            if not (flags & os.O_NONBLOCK):
+                fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, flags | os.O_NONBLOCK)
             
-            def on_chunk(content: str):
-                response_buffer.append(content)
-            
-            # Temporarily replace event handler
-            old_handler = getattr(self.agent_client, 'on_chunk', None)
-            self.agent_client.on_chunk = on_chunk
-            
-            # Get response from agent
-            await self.agent_client.run_stream(prompt)
-            
-            # Restore old handler
-            if old_handler:
-                self.agent_client.on_chunk = old_handler
-            
-            # Add agent response to history
-            full_response = "".join(response_buffer)
+            # Try to read one byte
+            char = os.read(sys.stdin.fileno(), 1)
+            if char:
+                return char.decode('utf-8', errors='ignore')
+            return None
+        except (OSError, IOError):
+            # Would block or other I/O error
+            return None
+
+            # Try to read one byte
+            char = os.read(sys.stdin.fileno(), 1)
+            if char:
+                return char.decode('utf-8', errors='ignore')
+            return None
+        except (OSError, IOError):
+            # Would block or other I/O error
+            return None
+
             if full_response:
                 self.messages.append(("agent", full_response))
         

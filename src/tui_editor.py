@@ -264,3 +264,13 @@ class GlodTUIEditor:
         help_text = """[bold cyan]Available Commands:[/bold cyan]
 [yellow]/allow <path>[/yellow]        Add a directory to allowed file access paths
 [yellow]/clear[/yellow]              Clear message history
+[yellow]/server start[/yellow]       Start the agent server
+[yellow]/server stop[/yellow]        Stop the agent server
+[yellow]/server restart[/yellow]     Restart the agent server
+[yellow]/server status[/yellow]      Check agent server status
+[yellow]/help[/yellow]               Show this help message
+[yellow]/exit[/yellow]               Exit GLOD"""
+        
+        self.messages.append(("agent", help_text))
+
+        

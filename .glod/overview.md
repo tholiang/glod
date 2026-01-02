@@ -2,6 +2,21 @@
 
 Fullscreen TUI AI code editor. Agent runs on FastAPI (port 8000), client communicates via HTTP RPC. Message history stored client-side.
 
+## Architecture
+
+```
+main.py → ClientSession → TUI/CLI
+                ├── AgentClient (HTTP)
+                ├── ServerManager (subprocess)
+                └── State (allowed_dirs, etc)
+
+ClientSession initialization:
+1. Create AgentClient and ServerManager
+2. Health check, auto-start if needed
+3. Sync allowed directories
+4. Pass session to TUI/CLI
+```
+
 ## Components
 - **Entry Point** (`src/main.py`) - Initializes CLI and runs interactive loop
 - **CLI Handler** (`src/cli.py`) - User interaction and output presentation (Rich formatting)
@@ -35,11 +50,11 @@ User Input → CLI (presentation) → ClientSession (business logic) → AgentCl
 - `GET /health` - Health check
 - `POST /run` - Execute prompt, return response
 - `POST /run-stream` - Stream response via Server-Sent Events
-- `POST /add-allowed-dir` - Register allowed directory with agent
+- `POST /add-allowed-dir` - Register allowed directory
 
 Request format: `{prompt: str, message_history: str}`
 
-## Tech Stack
+## Key Notes
 
 - Python 3.8+, FastAPI, Pydantic AI, Claude 3.5 Sonnet, httpx, Rich
 - Streaming via Server-Sent Events
@@ -51,6 +66,7 @@ Request format: `{prompt: str, message_history: str}`
 - Agent is stateless; all history on client
 - Directory allowlist validated client-side before sending to agent
 - HTTP timeout: 300s
+- Port: 8000
 - API key in `anthropic_api_key.txt`
 - Runs from `src/` directory
 

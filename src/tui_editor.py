@@ -119,20 +119,26 @@ class GlodTUIEditor:
             self.console.clear()
     
     def _create_layout(self) -> Layout:
-        """Create the main layout structure"""
+        """Create the main layout structure with responsive sizing"""
         layout = Layout()
-        layout.split(
+        # Split vertically: header (fixed 3), main (flex), footer (fixed 3)
+        layout.split_vertical(
             Layout(name="header", size=3),
             Layout(name="main"),
             Layout(name="footer", size=3),
         )
-        layout["main"].split_column(
-            Layout(name="messages"),
+        # Split main area: messages (60% flex), input_section (40% flex)
+        layout["main"].split_row(
+            Layout(name="messages", ratio=3),
+            Layout(name="input_section", ratio=1),
+        )
+        # Split input section: status (fixed 2) above input (flex)
+        layout["input_section"].split_vertical(
             Layout(name="status", size=2),
-            Layout(name="input", size=4),
+            Layout(name="input"),
         )
         return layout
-    
+
     def _update_layout(self, layout: Layout) -> None:
         """Update layout contents"""
         # Header
@@ -140,44 +146,51 @@ class GlodTUIEditor:
         if self.is_processing:
             header_text += " [yellow]⏳ Processing...[/yellow]"
         layout["header"].update(
-            Panel(header_text, style="cyan", padding=(0, 1))
+            Panel(header_text, style="cyan", padding=(0, 1), expand=False)
         )
         
         # Messages
-        layout["messages"].update(
-            Panel(self._render_messages(), style="blue", padding=(0, 1))
+        messages_panel = Panel(
+            self._render_messages(), 
+            style="blue", 
+            padding=(0, 1),
+            title="Messages",
+            expand=True,
         )
+        layout["messages"].update(messages_panel)
         
         # Status
         layout["status"].update(self._render_status())
         
         # Input
-        layout["input"].update(
-            Panel(self._render_input(), style="green", padding=(0, 1), title="Input")
+        input_panel = Panel(
+            self._render_input(), 
+            style="green", 
+            padding=(0, 1), 
+            title="Input",
+            expand=True,
         )
         
         # Footer
         layout["footer"].update(self._render_footer())
-    
+
+        layout["input"].update(input_panel)
     def _render_messages(self) -> str:
-        """Render message history"""
+        """Render message history with word wrapping"""
         lines = []
         
         # Show last 20 messages
         for role, content in self.messages[-20:]:
             if role == "user":
-                lines.append(f"[bold blue]You:[/bold blue] {content}")
+                lines.append(f"[bold blue]You:[/bold blue]")
+                lines.append(f"  {content}")
             else:
-                lines.append(f"[bold green]Agent:[/bold green] {content}")
+                lines.append(f"[bold green]Agent:[/bold green]")
+                lines.append(f"  {content}")
             
-            # Truncate long messages
-            content_lines = content.split("\n")
-            if len(content_lines) > 5:
-                lines.append(f"    [dim]... ({len(content_lines) - 5} more lines)[/dim]")
             lines.append("")  # Blank line between messages
         
         return "\n".join(lines) if lines else "[dim]No messages yet. Type a message to start![/dim]"
-    
     def _render_input(self) -> str:
         """Render input area"""
         if self.input_buffer:
@@ -187,51 +200,24 @@ class GlodTUIEditor:
     def _render_status(self) -> Panel:
         """Render status bar"""
         server_status = "🟢 Server Running" if self.server_manager.is_running() else "🔴 Server Offline"
-        allowed_dirs_text = f"Allowed dirs: {len(self.allowed_dirs)}"
-        return Panel(f"{server_status} | {allowed_dirs_text}", style="dim", padding=(0, 1))
+        allowed_dirs_text = f"Allowed: {len(self.allowed_dirs)} dir(s) | Messages: {len(self.messages)}"
+        return Panel(
+            f"{server_status}  •  {allowed_dirs_text}", 
+            style="dim white", 
+            padding=(0, 1),
+            expand=False,
+        )
     
     def _render_footer(self) -> Panel:
         """Render footer with help text"""
         return Panel(
-            "[dim]/help for commands • Ctrl+C to exit[/dim]",
+            "[dim]/help • /clear • /allow <path> • /server [start|stop|restart|status] • /exit[/dim]",
             style="dim",
             padding=(0, 1),
+            expand=False,
         )
-    
-    async def _get_input_async(self) -> Optional[str]:
-        """Get user input asynchronously using non-blocking stdin"""
-        loop = asyncio.get_event_loop()
-        
-        # Read a single character of input
-        try:
-            char = await loop.run_in_executor(None, self._read_char_nonblocking)
-            
-            if char is None:
-                return None
-            
-            # Handle special keys
-            if char == '\r' or char == '\n':
-                # User pressed enter - return the current buffer
-                result = self.input_buffer
-                self.input_buffer = ""
-                return result if result else None
-            elif char == '\x04':  # Ctrl+D
-                # EOF/exit signal
-                raise EOFError()
-            elif char == '\x08' or char == '\x7f':  # Backspace
-                # Delete last character
-                if self.input_buffer:
-                    self.input_buffer = self.input_buffer[:-1]
-                return None
-            elif char == '\x03':  # Ctrl+C
-                raise KeyboardInterrupt()
-            elif ord(char) >= 32:  # Printable ASCII characters
-                # Add to input buffer
-                self.input_buffer += char
-            
-            return None
-        except (KeyboardInterrupt, EOFError):
-            raise
+
+
     
     def _read_char_nonblocking(self) -> Optional[str]:
         """Read a single character without blocking"""

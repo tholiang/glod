@@ -13,12 +13,13 @@
 
 ## Layout
 
-Five-panel layout:
-- **Header** - Title and processing status indicator
-- **Messages** - Last 20 messages with user/agent distinction (scrolls automatically)
-- **Status** - Server health, message count, directory count
-- **Input** - Multi-line input area (up to 5 lines visible)
-- **Footer** - Quick command reference
+Responsive two-column layout that adapts to terminal size:
+- **Header** - Title and processing status indicator (fixed 3 lines)
+- **Messages** - Last 20 messages with user/agent distinction (60% width, flexible height)
+- **Input Section** (40% width, flexible):
+  - **Status** - Server health, message/directory count (fixed 2 lines)
+  - **Input** - Multi-line input area (flexible)
+- **Footer** - Quick command reference (fixed 3 lines)
 
 ## Usage
 
@@ -34,22 +35,18 @@ python src/main.py          # Run fullscreen TUI editor
 - Streams agent responses directly into history
 - Non-blocking input via async executor
 
-## Multi-Line Input
-
-Input is line-buffered. Type normally and press Enter to accumulate lines, then send the complete message.
-- Non-blocking input via async executor
-
-## Multi-Line Input
-
-Input is line-buffered. Type normally and press Enter to accumulate lines, then use command to submit (e.g., `/exit` to quit, or send message after input is ready).
-
-
+Layout uses ratio-based sizing:
+- Fixed-size panels (header, footer, status) don't scale
+- Flexible panels (messages, input) use ratios (3:1) to maintain proportions
+- Panel expansion enabled for better space utilization
 
 ## Architecture Notes
 
-- **Rich Live + Layout** - `Live` renders fullscreen with 2 FPS refresh, `Layout` manages split panels
+- **Rich Live + Layout** - `Live` renders fullscreen with 4 FPS refresh, `Layout` manages split panels with ratios
+- **Responsive Design** - Ratios and `expand=True` ensure layouts scale with terminal
 - **Event Handlers** - Agent responses streamed via `on_chunk` callback
 - **Message History** - Stored as list of tuples, last 20 shown (scrolls automatically)
-- **Input Buffering** - Each typed line accumulates in `input_lines[]` for multi-line support
+- **Input Buffering** - Character-by-character input accumulation for real-time feedback
 - **Async Input** - Uses `loop.run_in_executor()` to prevent blocking the Live display
+
 

@@ -41,7 +41,7 @@ Request format: `{prompt: str, message_history: str}`
 
 ## Tech Stack
 
-- Python 3.8+, FastAPI, Pydantic AI, Claude 3.5 Sonnet, httpx
+- Python 3.8+, FastAPI, Pydantic AI, Claude 3.5 Sonnet, httpx, Rich
 - Streaming via Server-Sent Events
 - Rich console library for formatting
 - Port: 8000

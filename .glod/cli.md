@@ -26,17 +26,16 @@ Tool calls and results flow through event handlers in `_entry()`:
 
 - `on_tool_phase_start()` - Yellow panel: "🔧 Tool Calls"
 - `on_tool_call(content)` - Yellow arrow `→` with cyan tool name and args
-- `on_tool_result(content)` - Blue arrow `←` with dimmed result (single line or multi-line indented)
-- `on_tool_phase_end()` - Cyan panel: "📝 Response"
-- `on_chunk(content)` - Direct output of final response text
-
-Tool call format: `tool_name(args)` - sent by server as `"tool_call"` event type, not plaintext chunks.
-
 ## Command Handling
 
 Commands prefixed with `/` are handled via `_command()`. Returns 0 to continue, 1 to exit.
 
 Server control uses `_handle_server_command()` for start/stop/restart/status.
+
+Directory allowlist managed client-side via `/allow <dir>` command:
+- Validates directory exists before adding
+- Maintains local list of allowed directories
+- Syncs with agent on each request
 
 History and directories synced with `_sync_allowed_dirs()`.
 

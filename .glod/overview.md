@@ -3,12 +3,11 @@
 Client-server AI code editor. Agent runs on FastAPI (port 8000), client communicates via HTTP RPC. Message history stored client-side.
 
 ## Components
-- **Client** (`src/main.py`) - CLI, message history, user interaction
+- **Client** (`src/main.py`) - CLI, message history, user interaction, directory allowlist management
 - **Client Library** (`src/client_lib.py`) - Rich formatting utilities for console output
 - **HTTP Client** (`src/client_agent.py`) - Async HTTP communication to agent
-- **Server Manager** (`src/server_manager.py`) - Subprocess manager for agent
-- **Agent Server** (`src/server/agent_server.py`) - FastAPI + Pydantic AI + Claude (to implement)
-- **Agent Server** (`src/server/agent_server.py`) - FastAPI + Pydantic AI + Claude (to implement)
+- **Server Manager** (`src/server_manager.py`) - Subprocess manager for agent (uses CWD as project root)
+- **Agent Server** (`src/server/agent_server.py`) - FastAPI + Pydantic AI + Claude
 
 ## Message Flow
 
@@ -21,13 +20,25 @@ Message history updated and stored locally
 ## Agent Server Endpoints
 
 - `GET /health` - Health check
-- `POST /run` - Execute prompt, return response + updated history
+- `POST /run` - Execute prompt, return response
 - `POST /run-stream` - Stream response via Server-Sent Events
-- `POST /add-allowed-dir` - Add file access directory
+- `POST /add-allowed-dir` - Register allowed directory with agent
 
 Request format: `{prompt: str, message_history: str}`
 
 ## Tech Stack
+
+- Python 3.8+, FastAPI, Pydantic AI, Claude 3.5 Sonnet, httpx
+- Streaming via Server-Sent Events
+- Port: 8000
+
+## Key Implementation Notes
+
+- Agent is stateless; all history on client
+- Project root defaults to current working directory (CWD)
+- Directory allowlist validated and managed client-side before sending to agent
+- HTTP timeout: 300s
+- API key in `anthropic_api_key.txt`
 
 - Python 3.8+, FastAPI, Pydantic AI, Claude 3.5 Sonnet, httpx
 - Streaming via Server-Sent Events

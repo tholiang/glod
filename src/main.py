@@ -7,7 +7,7 @@ import os
 import asyncio
 from pathlib import Path
 
-from client_lib import ClientSession, print_info, get_console
+from client_lib import ClientSession, get_console
 
 
 console = get_console()

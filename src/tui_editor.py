@@ -40,11 +40,6 @@ except ImportError:
     tty = None
     termios = None
 
-    print_error,
-    print_info,
-    get_console,
-)
-
 
 class GlodTUIEditor:
     """Fullscreen TUI editor for GLOD"""
@@ -66,12 +61,7 @@ class GlodTUIEditor:
         self.input_buffer: str = ""  # Current input being typed
         self.is_processing = False
         self.exit_requested = False
-
-        """Main TUI loop"""
-        try:
-            # Clear screen and show welcome
-            self.console.clear()
-            self.console.print(Panel("🔮 [bold cyan]GLOD AI Editor[/bold cyan] - Fullscreen Mode", style="cyan", padding=(0, 1)))
+    
     async def run(self) -> None:
         """Main TUI loop"""
         try:
@@ -112,7 +102,23 @@ class GlodTUIEditor:
             pass
         finally:
             self.console.clear()
-
+    
+    def _create_layout(self) -> Layout:
+        """Create the main layout structure"""
+        layout = Layout()
+        layout.split(
+            Layout(name="header", size=3),
+            Layout(name="main"),
+            Layout(name="footer", size=3),
+        )
+        layout["main"].split_column(
+            Layout(name="messages"),
+            Layout(name="status", size=1),
+            Layout(name="input", size=5),
+        )
+        return layout
+    
+    def _update_layout(self, layout: Layout) -> None:
         """Update layout with current state"""
         # Header
         header_text = "🔮 [bold cyan]GLOD AI Editor[/bold cyan]"
@@ -130,7 +136,7 @@ class GlodTUIEditor:
         
         # Input panel
         input_panel = self._render_input()
-        layout["input"].update(Panel(input_panel, title="[bold yellow]Input (Ctrl+D to submit)[/bold yellow]", style="yellow", padding=(0, 1)))
+        layout["input"].update(Panel(input_panel, title="[bold yellow]Input (Enter to submit)[/bold yellow]", style="yellow", padding=(0, 1)))
         
         # Footer
         footer = self._render_footer()
@@ -157,21 +163,39 @@ class GlodTUIEditor:
                 if len(content_lines) > 3:
                     lines.append(f"    [dim]... ({len(content_lines) - 3} more lines)[/dim]")
             else:
-    def _render_input(self) -> str:
-        """Render input area"""
-        if self.input_buffer:
-            return self.input_buffer
-        return "[dim]Type your message here...[/dim]"
-
+                # Show agent message
+                content_lines = content.split("\n")
+                for i, line in enumerate(content_lines[:5]):  # Show first 5 lines
+                    if i == 0:
+                        lines.append(f"[bold cyan]Agent:[/bold cyan] {line[:80]}")
+                    else:
+                        lines.append(f"    {line[:80]}")
+                if len(content_lines) > 5:
                     lines.append(f"    [dim]... ({len(content_lines) - 5} more lines)[/dim]")
             lines.append("")  # Blank line between messages
         
         return "\n".join(lines)
     
+    def _render_input(self) -> str:
+        """Render input area"""
+        if self.input_buffer:
+            return self.input_buffer
+        return "[dim]Type your message here...[/dim]"
+    
     def _render_status(self) -> str:
         """Render status bar"""
         server_status = "🟢 Server Running" if self.server_manager.is_running() else "🔴 Server Offline"
         allowed_dirs_text = f"Allowed dirs: {len(self.allowed_dirs)}"
+        return Panel(f"{server_status} | {allowed_dirs_text}", style="dim", padding=(0, 1))
+    
+    def _render_footer(self) -> str:
+        """Render footer with help text"""
+        return Panel(
+            "[dim]/help for commands • Ctrl+C to exit[/dim]",
+            style="dim",
+            padding=(0, 1),
+        )
+    
     async def _get_input_async(self) -> Optional[str]:
         """Get user input asynchronously using non-blocking stdin"""
         loop = asyncio.get_event_loop()
@@ -217,13 +241,6 @@ class GlodTUIEditor:
             except:
                 return None
         return None
-
-            
-            return None
-        
-        except EOFError:
-            return None
-    
     
     async def _send_message(self, prompt: str) -> None:
         """Send a message to the agent"""
@@ -352,3 +369,4 @@ class GlodTUIEditor:
 [yellow]/exit[/yellow]               Exit GLOD"""
         
         self.messages.append(("agent", help_text))
+            

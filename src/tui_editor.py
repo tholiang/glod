@@ -62,12 +62,8 @@ class GlodTUIEditor:
             self.console.print("[dim]Ready for input...[/dim]\n")
             
             while not self.exit_requested:
-                # Display current state with Live updating
-                self._render_display()
-                
                 # Get user input using Rich's Prompt
                 try:
-                    # Create a custom prompt that doesn't add extra output
                     user_input = self.console.input("\n[bold green]You:[/bold green] ")
                     
                     if not user_input.strip():
@@ -89,53 +85,52 @@ class GlodTUIEditor:
         finally:
             self.console.clear()
     
-    def _render_display(self) -> None:
-        """Render the current display state"""
-        self.console.clear()
+    def _render_screen(self) -> Panel:
+        """Render the complete screen as a single Panel"""
+        # Build message display
+        lines = []
+        
+        for role, content in self.messages:
+            if role == "user":
+                lines.append(f"[bold blue]You:[/bold blue]")
+            else:
+                lines.append(f"[bold green]Agent:[/bold green]")
+            lines.append(f"  {content}")
+            lines.append("")
+        
+        # Add streaming response if any
+        if self.streaming_response:
+            lines.append(f"[bold green]Agent:[/bold green]")
+            lines.append(f"  {self.streaming_response}[yellow]▌[/yellow]")
+        
+        messages_content = "\n".join(lines) if lines else "[dim]No messages yet. Type a message to start![/dim]"
         
         # Header
         header_text = "🔮 GLOD AI Editor"
         if self.is_processing:
             header_text += " [yellow]⏳ Processing...[/yellow]"
-        self.console.print(Panel(header_text, style="cyan", padding=(0, 1)))
         
         # Status bar
         server_status = "🟢 Server Running" if self.server_manager.is_running() else "🔴 Server Offline"
         allowed_dirs_text = f"Allowed: {len(self.allowed_dirs)} dir(s) | Messages: {len(self.messages)}"
-        self.console.print(Panel(
-            f"{server_status}  •  {allowed_dirs_text}",
-            style="dim white",
-            padding=(0, 1),
-        ))
         
-        # Messages
-        self.console.print(Panel(
-            self._render_messages(),
-            style="blue",
-            padding=(0, 1),
-            title="Messages",
-        ))
+        # Create layout
+        layout = Layout()
+        layout.split_column(
+            Layout(Panel(header_text, style="cyan", padding=(0, 1)), name="header", size=3),
+            Layout(Panel(f"{server_status}  •  {allowed_dirs_text}", style="dim white", padding=(0, 1)), name="status", size=3),
+            Layout(Panel(messages_content, style="blue", padding=(0, 1), title="Messages"), name="messages"),
+            Layout(Panel("[dim]/help • /clear • /allow <path> • /server [start|stop|restart|status] • /exit[/dim]", style="dim", padding=(0, 1)), name="footer", size=3),
+        )
         
-        # Footer with help
-        self.console.print(Panel(
-            "[dim]/help • /clear • /allow <path> • /server [start|stop|restart|status] • /exit[/dim]",
-            style="dim",
-            padding=(0, 1),
-        ))
+        return layout
     
-    def _render_messages(self) -> str:
-        """Render message history with word wrapping"""
-        lines = []
-        
-        # Show all messages
-        for role, content in self.messages:
-            if role == "user":
     async def _send_message(self, message: str) -> None:
         """Send a message to the agent with streaming updates"""
         if not message.strip():
             return
         
-        # Add user message to history
+        # Add user message to history and display it
         self.messages.append(("user", message))
         self.is_processing = True
         self.streaming_response = ""
@@ -147,11 +142,9 @@ class GlodTUIEditor:
                 for role, content in self.messages[:-1]  # Exclude the current message
             ])
             
-            # Create initial renderable for Live display
-            initial_renderable = self._render_live_display()
-            
-            # Use Live context manager for streaming updates
-            with Live(initial_renderable, console=self.console, refresh_per_second=20) as live:
+            # Create Live display for streaming
+            display = self._render_screen()
+            with Live(display, console=self.console, refresh_per_second=20) as live:
                 try:
                     # Stream response
                     async for chunk in self.agent_client.stream_run(
@@ -160,15 +153,18 @@ class GlodTUIEditor:
                     ):
                         self.streaming_response += chunk
                         # Update display with streaming response
-                        display_content = self._render_live_display()
-                        live.update(display_content)
+                        display = self._render_screen()
+                        live.update(display)
                     
                     # Add final response to messages
                     if self.streaming_response:
                         self.messages.append(("agent", self.streaming_response))
+                    self.streaming_response = ""
+                    # Final display update
+                    display = self._render_screen()
+                    live.update(display)
                 
                 finally:
-                    # Stop processing
                     self.is_processing = False
                     self.streaming_response = ""
         
@@ -178,51 +174,6 @@ class GlodTUIEditor:
         finally:
             self.is_processing = False
             self.streaming_response = ""
-
-            self.messages.append(("agent", f"[red]Error:[/red] {str(e)}"))
-        
-        finally:
-            self.is_processing = False
-            self.streaming_response = ""
-    
-    def _render_live_display(self) -> Panel:
-        """Render display content for Live updates"""
-        # Header
-        header_text = "🔮 GLOD AI Editor"
-        if self.is_processing:
-            header_text += " [yellow]⏳ Processing...[/yellow]"
-        
-        # Status bar
-        server_status = "🟢 Server Running" if self.server_manager.is_running() else "🔴 Server Offline"
-        allowed_dirs_text = f"Allowed: {len(self.allowed_dirs)} dir(s) | Messages: {len(self.messages)}"
-        
-        # Build complete message display including streaming response
-        lines = []
-        
-        for role, content in self.messages:
-            if role == "user":
-                lines.append(f"[bold blue]You:[/bold blue]")
-                lines.append(f"  {content}")
-            else:
-                lines.append(f"[bold green]Agent:[/bold green]")
-                lines.append(f"  {content}")
-            
-            lines.append("")
-        
-        # Add streaming response if any
-        if self.streaming_response:
-            lines.append(f"[bold green]Agent:[/bold green]")
-            lines.append(f"  {self.streaming_response}")
-        
-        messages_content = "\n".join(lines) if lines else "[dim]No messages yet. Type a message to start![/dim]"
-        
-        # Return the complete display as a Panel
-        return Panel(
-            messages_content,
-            style="blue",
-            padding=(0, 1),
-            title="Messages",
-        )
     
     async def _handle_command(self, command_str: str) -> None:
         """Handle / commands"""

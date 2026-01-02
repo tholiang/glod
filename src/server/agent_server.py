@@ -50,12 +50,16 @@ class StreamEvent(BaseModel):
 
 
 def _serialize_message_history(message_history: list[ModelMessage]) -> str:
+    if not message_history:
+        return ""
     return ModelMessagesTypeAdapter.dump_json(message_history).decode()
-
 def _deserialize_message_history(message_history: str) -> list[ModelMessage]:
-    if message_history == "":
+    if not message_history or message_history.strip() == "":
         return []
-    return ModelMessagesTypeAdapter.validate_json(message_history)
+    try:
+        return ModelMessagesTypeAdapter.validate_json(message_history)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid message history format: {str(e)}")
 
 async def _process_request(prompt: str, message_history: str) -> str:
     """Process a single prompt with the agent"""
@@ -63,8 +67,6 @@ async def _process_request(prompt: str, message_history: str) -> str:
         result = await editor_run(prompt, message_history=_deserialize_message_history(message_history))
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 async def _stream_generator(prompt: str, message_history: str) -> AsyncGenerator[str]:
     """
     Generator that yields Server-Sent Events as the agent streams responses.
@@ -80,10 +82,22 @@ async def _stream_generator(prompt: str, message_history: str) -> AsyncGenerator
             yield event.to_sse()
         
         # Send completion event with final message history
+        try:
+            serialized_history = _serialize_message_history(deserialized_history)
+        except Exception as serialize_error:
+            raise Exception(f"Failed to serialize message history: {str(serialize_error)}")
+        
         completion_event = StreamEvent(
             type="complete",
-            content=_serialize_message_history(deserialized_history)
+            content=serialized_history
         )
+        yield completion_event.to_sse()
+        
+    except Exception as e:
+        import traceback
+        error_msg = f"{str(e)}\n{traceback.format_exc()}"
+        error_event = StreamEvent(type="error", content=error_msg)
+        yield error_event.to_sse()
         yield completion_event.to_sse()
         
     except Exception as e:

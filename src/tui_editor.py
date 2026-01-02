@@ -148,6 +148,33 @@ class GlodTUIEditor:
                     lines.append(f"    [dim]... ({len(content_lines) - 3} more lines)[/dim]")
             else:
                 # Agent response - show first few lines
+                content_lines = content.split("\n")
+                for i, line in enumerate(content_lines[:5]):  # Show first 5 lines
+                    if i == 0:
+                        lines.append(f"[bold cyan]Agent:[/bold cyan] {line[:80]}")
+                    else:
+                        lines.append(f"    {line[:80]}")
+                if len(content_lines) > 5:
+                    lines.append(f"    [dim]... ({len(content_lines) - 5} more lines)[/dim]")
+            lines.append("")  # Blank line between messages
+        
+        return "\n".join(lines)
+    
+    def _render_status(self) -> str:
+        """Render status bar"""
+        server_status = "🟢 Server Running" if self.server_manager.is_running() else "🔴 Server Offline"
+        allowed_dirs_text = f"Allowed dirs: {len(self.allowed_dirs)}"
+        return f"[dim]{server_status} | {allowed_dirs_text}[/dim]"
+    
+    def _render_input(self) -> str:
+        """Render input area"""
+        if self.input_lines:
+            return "\n".join(self.input_lines)
+        return "[dim]Type your message here...[/dim]"
+    
+    def _render_footer(self) -> str:
+        """Render footer"""
+        return "[dim]Type /help for commands | Ctrl+C to exit[/dim]"
     
     async def _get_input(self) -> Optional[str]:
         """Get user input (reads until EOF or complete message)"""
@@ -319,4 +346,3 @@ class GlodTUIEditor:
 [yellow]/exit[/yellow]               Exit GLOD"""
         
         self.messages.append(("agent", help_text))
-

@@ -1,38 +1,45 @@
 # Fullscreen TUI Editor
 
-`src/tui_editor.py` implements a fullscreen terminal UI for GLOD using Rich's Live display with message streaming.
+`src/tui_editor.py` implements a fullscreen terminal UI using Rich layouts and message streaming.
 
 ## Architecture
 
-`GlodTUIEditor` wraps a `ClientSession` (from `client_lib.py`):
-- Session manages server startup, initialization, agent connection, allowed dirs
-- TUI provides fullscreen display and message-based UI
-- Command handlers use session's state/manager objects directly
+Pure consumption of AsyncGenerators from `ClientSession`:
+- `ClientSession` returns `AsyncGenerator[str, None]` for all operations
+- `GlodTUIEditor` consumes generators and formats output for display
+- No business logic in TUI - it's purely a display layer
+- No console side effects in core logic
 
 ## Features
 
-- **Interactive message interface** - User/agent message history in scrollable panel
-- **Real-time streaming** - Agent responses display live as they stream
-- **Status bar** - Live server status, dir count, message count
-- **Command palette** - `/help`, `/clear`, `/allow`, `/server`, `/exit`
-- **Layout-based UI** - Rich Layout with header, status, messages, footer panels
+- **Message interface** - Scrollable user/agent message history
+- **Real-time streaming** - Agent responses display live as chunks arrive
+- **Status bar** - Server status, directory count, message count
+- **Commands** - `/help`, `/clear`, `/allow`, `/server`, `/exit`
+- **Status formatting** - Color-coded Rich markup for status messages
 
 ## Implementation
 
-`GlodTUIEditor.__init__(session: ClientSession)` takes a pre-initialized session:
-- `_send_message()` - Streams agent response into message history with Live display updates
-- `_handle_command()` - Routes `/commands` to specific handlers
-- `_handle_allow_dir()` / `_handle_server_command()` - Delegate to session's state/managers, display results in TUI
-- `_show_help()` - Display help as agent message
+Key methods:
 
-TUI commands do NOT call session.handle_*() methods (which print to console). Instead, they:
-1. Call session state methods directly (ServerManager, AgentClient)
-2. Append results to message history for display
+- `_send_message(msg)` - Stream agent response to message history
+- `_handle_command(cmd)` - Route `/commands` to session generators
+- `_format_status_message(msg)` - Apply Rich markup (✓→green, ℹ→blue, Error:→red)
+- `_show_help()` - Display help text in message history
 
-## Design Notes
+Command flow:
+```
+User input → _handle_command()
+  → session.handle_allow_dir_command() / handle_server_command()
+  → Consume AsyncGenerator[str, None]
+  → _format_status_message() adds Rich markup
+  → Append to message history
+```
 
-- **Thin display layer** - TUI is UI-only, relies on ClientSession for core logic
-- **Message-based feedback** - Commands display feedback in message history, not console
-- **Streaming via stream_run()** - Uses AgentClient.stream_run() generator, not stream_run_print()
-- **State sharing** - TUI directly accesses session.allowed_dirs, session.server_manager
+## Design
+
+- **Thin display layer** - All logic delegated to ClientSession
+- **Pure generators** - No print/console calls in core code
+- **Rich formatting** - Status messages colored based on type
+- **Streaming UI** - Live display updates during agent response streaming
 

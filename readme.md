@@ -1,30 +1,28 @@
 # GLOD - AI Code Editor
 
-A client-agent architecture where you can interact with an AI assistant to edit code, with the agent running as a separate HTTP RPC server.
+A client-server AI code editor where you interact with an AI assistant to edit code. The agent runs as a separate FastAPI server (HTTP RPC), client communicates via REST API. Message history is stored client-side, making the agent stateless and restartable.
 
-(in large part made by itself)
+(largely made by itself)
 
 ## Quick Start
 
 ### Prerequisites
 ```bash
-pip install fastapi uvicorn httpx pydantic-ai anthropic
+pip install -r requirements.txt
 ```
 
 ### Terminal 1: Start Agent Server
 ```bash
-cd src
-python -m agents.agent_server
+python main.py /server start
 ```
 
 You should see:
 ```
-INFO:     Uvicorn running on http://127.0.0.1:8000
+✅ Server started on http://127.0.0.1:8000
 ```
 
 ### Terminal 2: Start Client
 ```bash
-cd src
 python main.py
 ```
 
@@ -44,55 +42,60 @@ Type /help for commands.
 > Show me the file tools available
 [Agent lists the tools...]
 
+> /allow /path/to/directory
+Directory added to allowlist
+
 > /clear
 Message history cleared.
-
-> /help
-[Shows available commands]
-```
-
-## Architecture
-
-```
-┌──────────────────────┐
-│  Client (main.py)    │  • Message history
-│  HTTP requests       │  • User interaction
-└──────────┬───────────┘
-           │
-      HTTP │ REST API
-           │
-┌──────────▼───────────┐
-│  Agent (FastAPI)     │  • Stateless
-│  agent_server.py     │  • Can restart anytime
-└──────────────────────┘
-```
 
 ## Key Features
 
 ✅ **HTTP RPC** - Clean REST API instead of subprocess communication  
 ✅ **Client-Side History** - Message history stays with the client  
 ✅ **Stateless Agent** - Kill and restart anytime without losing context  
+✅ **Client-Side Allowlist** - Directory access managed and validated on client  
 ✅ **Easy to Test** - Use curl or Swagger UI at `http://127.0.0.1:8000/docs`  
-✅ **Type-Safe** - No typing issues, proper use of pydantic-ai  
+✅ **Type-Safe** - Proper use of pydantic-ai and type hints  
 ✅ **Extensible** - Add new endpoints easily  
+✅ **Streaming** - Real-time response streaming via Server-Sent Events
 
-## Files
+## File Structure
 
-| File | Purpose |
-|------|---------|
-| `src/main.py` | Client application (message history, user input) |
-| `src/client_agent.py` | HTTP client for agent communication |
-| `src/agents/agent_server.py` | Agent RPC server (FastAPI) |
-| `src/tools/files.py` | File manipulation tools for the agent |
-| `src/app.py` | App configuration and path allowlist |
+```
+glod/
+├── src/
+│   ├── main.py                 # CLI client
+│   ├── client_agent.py         # HTTP client wrapper
+│   ├── client_lib.py           # Rich formatting utilities
+│   ├── server_manager.py       # Subprocess manager for server
+│   ├── server/
+│   │   ├── agent_server.py     # FastAPI server
+│   │   └── agents/
+│   │       └── editor.py       # Agent implementation
+│   └── tools/
+│       └── files.py            # File manipulation tools
+├── .glod/                      # Agent documentation
+│   ├── overview.md
+│   ├── cli.md
+│   ├── agent_streaming.md
+│   ├── client_lib.md
+│   └── subagents.md
+├── requirements.txt
+├── readme.md
+└── setup.py
+```
 
 ## Commands
 
 ```
 > Your prompt          # Send to agent
+> /allow <dir>        # Add directory to allowlist
 > /clear              # Clear conversation history
-> /help               # Show this help
+> /help               # Show commands
 > /exit               # Exit program
+> /server start       # Start agent server
+> /server stop        # Stop agent server
+> /server status      # Check server status
 ```
 
 ## Testing the Agent
@@ -100,31 +103,75 @@ Message history cleared.
 While the server is running:
 
 ```bash
-# Health check
-curl http://127.0.0.1:8000/health
+## Development
 
-# Run a prompt
-curl -X POST http://127.0.0.1:8000/run \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Say hello"}'
+### Adding a New Agent Endpoint
 
-# Interactive API docs
-# Open http://127.0.0.1:8000/docs in your browser
+1. Add endpoint in `src/server/agent_server.py`:
+```python
+@server.post("/new-endpoint")
+async def new_endpoint(request: MyRequest) -> MyResponse:
+    # Your code here
+    return MyResponse(...)
+```
+
+2. Add client method in `src/client_agent.py`:
+```python
+async def new_method(self, data: str) -> dict:
+    response = await self.client.post(f"{self.base_url}/new-endpoint", json={...})
+    return response.json()
+```
+
+### Adding a New Tool
+
+1. Create tool function in `src/tools/files.py` with proper type hints
+2. Register in agent via `@tool` decorator in `src/server/agents/editor.py`
+3. Tool will be available in agent context automatically
+
+### Running with Auto-Reload
+
+```bash
+# Start client (auto-connects to server)
+python main.py
+
+# In another terminal, restart server with changes
+python main.py /server restart
+```
+
+## Troubleshooting
+
+**"Could not connect to agent server"**
+- Start the server: `python main.py /server start`
+
+**"Server returned 500"**
+- Check the server logs in the terminal where it's running
+
+**Agent crashed**
+- Restart it: `python main.py /server restart`
+- Message history is preserved on the client
+
+**Want to see API docs**
+- Open `http://127.0.0.1:8000/docs` while server is running
+
+## Project Root
+
+The client uses the current working directory (CWD) as the project root for file operations. Start the client from your project directory:
+
+```bash
+cd /path/to/your/project
+python /path/to/glod/src/main.py
 ```
 
 ## Documentation
 
-- **[QUICK_START.md](QUICK_START.md)** - Get started in 2 minutes
-- **[ARCHITECTURE_FINAL.md](ARCHITECTURE_FINAL.md)** - Full architecture details
-- **[RPC_SETUP.md](RPC_SETUP.md)** - RPC server setup and usage
+- **[.glod/overview.md](.glod/overview.md)** - Architecture and components
+- **[.glod/cli.md](.glod/cli.md)** - CLI interface details
+- **[.glod/agent_streaming.md](.glod/agent_streaming.md)** - Streaming implementation
+- **[.glod/client_lib.md](.glod/client_lib.md)** - Client library utilities
 
-## How It Works
+## License
 
-1. **Client** starts and connects to agent server via HTTP
-2. **User** types a prompt
-3. **Client** sends HTTP POST request to `/run` endpoint
-4. **Agent** processes the prompt independently (stateless)
-5. **Agent** returns the output via HTTP response
+MIT
 6. **Client** displays output and stores it in local message history
 
 Key insight: The agent is **completely stateless**. All conversation history is maintained on the client side. This allows you to:

@@ -41,10 +41,7 @@ allowed directories:{'\n'.join(dirs)}
 def _get_all_tools() -> List:
     """Get all available tools: file operations, git operations, code understanding, and subagent spawning"""
     return files.get_pydantic_tools() + git.get_pydantic_git_tools() + code_understanding.get_pydantic_tools() + agents.get_pydantic_agent_tools()
-def _get_all_tools() -> List:
-    """Get all available tools: file operations, git operations, code understanding, and subagent spawning"""
-    return files.get_pydantic_tools() + git.get_pydantic_git_tools() + code_understanding.get_pydantic_tools() + agents.get_pydantic_agent_tools()
-    
+  
 async def editor_run(prompt: str, message_history: List[ModelMessage]) -> str:
     model = AnthropicModel('claude-haiku-4-5')
     agent = Agent(

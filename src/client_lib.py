@@ -10,7 +10,7 @@ Provides:
 import os
 import asyncio
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional, Callable, AsyncGenerator
 
 from client_agent import AgentClient
 from rich.panel import Panel
@@ -19,6 +19,7 @@ from server_manager import ServerManager
 from util import print_error, print_help, print_info, print_response_footer, print_response_header, print_success, print_welcome, get_console
 
 console = get_console()
+
 
 # Client Session Management
 class ClientSession:
@@ -126,120 +127,146 @@ class ClientSession:
             await self.agent_client.run(prompt)
         
         print_response_footer()
+    async def _sync_allowed_dirs(self) -> None:
+        """Sync allowed directories with server"""
+        for dir_path in self.allowed_dirs:
+            async for _ in self.handle_allow_dir_command(dir_path):
+                pass  # Consume generator but ignore output during sync
     
-    async def handle_allow_dir_command(self, dir_path: str) -> bool:
-        """Handle /allow commands to add allowed directories
+    async def handle_allow_dir_command(self, dir_path: str) -> AsyncGenerator[str, None]:
+        """Handle /allow commands to add allowed directories.
         
-        Returns:
-            True if successful, False otherwise
+        Yields:
+            Status messages indicating success or failure:
+            - "✓ Added allowed directory: {path}" on success
+            - "Error: Directory does not exist: {path}" if path is invalid
+            - "Error: Failed to add allowed directory: {error}" on API failure
         """
         if not self.agent_client:
-            print_error("Agent client not initialized")
-            return False
+            yield "Error: Agent client not initialized"
+            return
         
         abs_path = os.path.abspath(dir_path)
         
         if not os.path.isdir(abs_path):
-            print_error(f"Directory does not exist: {abs_path}")
-            return False
+            yield f"Error: Directory does not exist: {abs_path}"
+            return
         
         if abs_path not in self.allowed_dirs:
             self.allowed_dirs.append(abs_path)
         
         try:
             await self.agent_client.add_allowed_dir(abs_path)
-            print_success(f"Added allowed directory: {abs_path}")
-            return True
+            yield f"✓ Added allowed directory: {abs_path}"
         except Exception as e:
-            print_error(f"Failed to add allowed directory: {str(e)}")
-            return False
+            yield f"Error: Failed to add allowed directory: {str(e)}"
     
-    async def _sync_allowed_dirs(self) -> None:
-        """Sync allowed directories with server"""
-        for dir_path in self.allowed_dirs:
-            await self.handle_allow_dir_command(dir_path)
-    
-    async def handle_server_command(self, subcommand: Optional[str]) -> bool:
-        """Handle /server commands
+    async def handle_server_command(self, subcommand: Optional[str]) -> AsyncGenerator[str, None]:
+        """Handle /server commands.
         
-        Returns:
-            True if successful, False otherwise
+        Args:
+            subcommand: One of "start", "stop", "restart", or "status"
+        
+        Yields:
+            Status messages indicating the result:
+            - "Usage: /server [start|stop|restart|status]" if no subcommand provided
+            - "ℹ Starting agent server..." when starting
+            - "✓ Agent server started" on successful start
+            - "ℹ Stopping agent server..." when stopping
+            - "✓ Agent server stopped" on successful stop
+            - "ℹ Restarting agent server..." when restarting
+            - "✓ Agent server restarted" on successful restart
+            - "✓ Agent server is running (PID: {pid})" for status check (running)
+            - "Error: Agent server is not running" for status check (stopped)
+            - "Error: Unknown server command: {subcommand}" for invalid commands
         """
         if subcommand is None:
-            print_info("Usage: /server [start|stop|restart|status]")
-            return False
+            yield "Usage: /server [start|stop|restart|status]"
+            return
 
         subcommand = subcommand.lower()
         
         if subcommand == "start":
-            print_info("Starting agent server...")
+            yield "ℹ Starting agent server..."
             self.server_manager.start()
             await asyncio.sleep(1)
-            print_success("Agent server started")
-            return True
+            yield "✓ Agent server started"
         
         elif subcommand == "stop":
-            print_info("Stopping agent server...")
+            yield "ℹ Stopping agent server..."
             self.server_manager.stop()
-            print_success("Agent server stopped")
-            return True
+            yield "✓ Agent server stopped"
         
         elif subcommand == "restart":
-            print_info("Restarting agent server...")
+            yield "ℹ Restarting agent server..."
             self.server_manager.restart()
             await asyncio.sleep(1)
             await self._sync_allowed_dirs()
-            print_success("Agent server restarted")
-            return True
+            yield "✓ Agent server restarted"
         
         elif subcommand == "status":
             if self.server_manager.is_running():
                 pid = self.server_manager.get_pid()
-                print_success(f"Agent server is running (PID: {pid})")
+                yield f"✓ Agent server is running (PID: {pid})"
             else:
-                print_error("Agent server is not running")
-            return True
+                yield "Error: Agent server is not running"
         
         else:
-            print_error(f"Unknown server command: {subcommand}")
-            print_info("Usage: /server [start|stop|restart|status]")
-            return False
+            yield f"Error: Unknown server command: {subcommand}"
+
+
     
-    async def handle_command(self, prompt: str) -> int:
+    async def handle_command(self, prompt: str) -> AsyncGenerator[str, None]:
         """
-        Handle commands starting with /
+        Handle commands starting with /.
         
-        Returns:
-            0 to continue, 1 to exit
+        Args:
+            prompt: The full command string (including the leading /)
+        
+        Yields:
+            Output messages from the command execution:
+            - Status messages from /allow, /server commands
+            - "✓ Message history cleared" for /clear
+            - Help text for /help
+            - "Error: Unknown command: /{command}" for unrecognized commands
+        
+        Note:
+            Consumers should watch for the command output and can check
+            if they need to exit by checking for "Exiting..." message.
         """
         stripped = prompt.strip()[1:].lower()
         parts = stripped.split(maxsplit=1)
         command = parts[0]
         
         if command == "exit":
-            return 1
+            yield "Exiting..."
+            return
         
         elif command == "allow":
             if len(parts) > 1:
-                await self.handle_allow_dir_command(parts[1])
+                async for message in self.handle_allow_dir_command(parts[1]):
+                    yield message
             else:
-                print_error("Usage: /allow <directory_path>")
+                yield "Error: Usage: /allow <directory_path>"
         
         elif command == "clear":
             if self.agent_client:
                 self.agent_client.clear_history()
-                print_success("Message history cleared")
+                yield "✓ Message history cleared"
+            else:
+                yield "Error: Agent client not initialized"
         
         elif command == "server":
-            await self.handle_server_command(parts[1] if len(parts) > 1 else None)
+            async for message in self.handle_server_command(parts[1] if len(parts) > 1 else None):
+                yield message
         
         elif command == "help":
+            yield "[Help text follows]"
             print_help()
         
         else:
-            print_error(f"Unknown command: /{command}")
-        
-        return 0
+            yield f"Error: Unknown command: /{command}"
+
     
     async def run_interactive(self) -> None:
         """Run the main interactive loop"""
@@ -264,7 +291,15 @@ class ClientSession:
                     continue
                 
                 if prompt.startswith("/"):
-                    if await self.handle_command(prompt) == 1:
+                    # Consume the generator and check for exit signal
+                    should_exit = False
+                    async for message in self.handle_command(prompt):
+                        if message == "Exiting...":
+                            should_exit = True
+                        else:
+                            # Still print the message for compatibility
+                            console.print(message)
+                    if should_exit:
                         break
                     continue
                 
@@ -274,8 +309,7 @@ class ClientSession:
         except KeyboardInterrupt:
             console.print()
             print_info("Exiting...")
-            return
-        
         finally:
             self.server_manager.stop()
             console.print()
+

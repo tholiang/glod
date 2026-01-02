@@ -116,6 +116,10 @@ class GlodTUIEditor:
         self.messages.append(("user", message))
         self.is_processing = True
         self.streaming_response = ""
+
+        if self.session.agent_client is None:
+            self.messages.append(("agent", "[red]✗ Agent client is not initialized[/red]"))
+            return
         
         try:
             # Format message history for agent
@@ -155,9 +159,26 @@ class GlodTUIEditor:
         
         finally:
             self.is_processing = False
-            self.streaming_response = ""
     
-    async def _handle_command(self, command_str: str) -> None:
+    def _format_status_message(self, message: str) -> str:
+        """Format a status message with Rich markup.
+        
+        Converts plain text status messages into Rich markup:
+        - ✓ → [green]✓[/green]
+        - ℹ → [blue]ℹ[/blue]
+        - Error: → [red]Error:[/red]
+        """
+        if message.startswith("✓"):
+            return "[green]" + message + "[/green]"
+        elif message.startswith("ℹ"):
+            return "[blue]" + message + "[/blue]"
+        elif message.startswith("Error:"):
+            return "[red]" + message + "[/red]"
+        elif message.startswith("Usage:"):
+            return "[yellow]" + message + "[/yellow]"
+        else:
+            return message
+
     async def _handle_command(self, command_str: str) -> None:
         """Handle / commands"""
         stripped = command_str.strip()[1:].lower()
@@ -179,63 +200,18 @@ class GlodTUIEditor:
         
         elif command == "allow":
             if len(parts) > 1:
-                await self._handle_allow_dir(parts[1])
+                async for message in self.session.handle_allow_dir_command(parts[1]):
+                    self.messages.append(("agent", self._format_status_message(message)))
             else:
                 self.messages.append(("agent", "[red]Usage:[/red] /allow <directory_path>"))
         
         elif command == "server":
-            await self._handle_server_command(parts[1] if len(parts) > 1 else None)
+            async for message in self.session.handle_server_command(parts[1] if len(parts) > 1 else None):
+                self.messages.append(("agent", self._format_status_message(message)))
         
         else:
             self.messages.append(("agent", f"[red]Unknown command:[/red] /{command}"))
-
-        import os
-        abs_path = os.path.abspath(dir_path)
-        
-        if not os.path.isdir(abs_path):
-            self.messages.append(("agent", f"[red]Directory does not exist:[/red] {abs_path}"))
-            return
-        
-        if abs_path not in self.session.allowed_dirs:
-            self.session.allowed_dirs.append(abs_path)
-        
-        try:
-            await self.session.agent_client.add_allowed_dir(abs_path)
-            self.messages.append(("agent", f"[green]✓ Added allowed directory:[/green] {abs_path}"))
-        except Exception as e:
-            self.messages.append(("agent", f"[red]Failed to add directory:[/red] {str(e)}"))
     
-    async def _handle_server_command(self, subcommand: None | str) -> None:
-        """Handle /server commands"""
-        if subcommand is None:
-            self.messages.append(("agent", "[yellow]Usage:[/yellow] /server [start|stop|restart|status]"))
-            return
-        
-        subcommand = subcommand.lower()
-        
-        if subcommand == "start":
-            self.session.server_manager.start()
-            await asyncio.sleep(1)
-            self.messages.append(("agent", "[green]✓ Agent server started[/green]"))
-        
-        elif subcommand == "stop":
-            self.session.server_manager.stop()
-            self.messages.append(("agent", "[green]✓ Agent server stopped[/green]"))
-        
-        elif subcommand == "restart":
-            self.session.server_manager.restart()
-            await asyncio.sleep(1)
-            self.messages.append(("agent", "[green]✓ Agent server restarted[/green]"))
-        
-        elif subcommand == "status":
-            if self.session.server_manager.is_running():
-                pid = self.session.server_manager.get_pid()
-                self.messages.append(("agent", f"[green]✓ Agent server is running[/green] (PID: {pid})"))
-            else:
-                self.messages.append(("agent", "[red]✗ Agent server is not running[/red]"))
-        
-        else:
-            self.messages.append(("agent", f"[red]Unknown server command:[/red] {subcommand}"))
     
     async def _show_help(self) -> None:
         """Display help in message history"""

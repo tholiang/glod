@@ -84,7 +84,7 @@ class GlodTUIEditor:
                     break
         
         except Exception as e:
-            self.console.print(f"[red]Error in TUI loop:[/red] {e}")
+            self.console.print("[red]Error in TUI loop: [/red]"+str(e))
         finally:
             self.console.clear()
     

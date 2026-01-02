@@ -10,9 +10,6 @@ Features:
 - Server status indicator
 """
 import asyncio
-import os
-import sys
-import fcntl
 from typing import Optional
 from pathlib import Path
 
@@ -23,6 +20,7 @@ from rich.text import Text
 from rich.live import Live
 from rich.align import Align
 from rich.table import Table
+from rich.prompt import Prompt
 
 from client_agent import AgentClient
 from server_manager import ServerManager
@@ -32,13 +30,6 @@ from client_lib import (
     print_info,
     get_console,
 )
-
-try:
-    import tty
-    import termios
-except ImportError:
-    tty = None
-    termios = None
 
 
 class GlodTUIEditor:
@@ -58,123 +49,79 @@ class GlodTUIEditor:
         # Message history: list of (role, content) tuples
         # role: "user" or "agent"
         self.messages: list[tuple[str, str]] = []
-        self.input_buffer: str = ""  # Current input being typed
         self.is_processing = False
         self.exit_requested = False
     
     async def run(self) -> None:
         """Main TUI loop"""
-        # Save original terminal settings
-        original_settings = None
-        if tty and termios:
-            try:
-                original_settings = termios.tcgetattr(sys.stdin)
-                tty.setraw(sys.stdin.fileno())
-            except:
-                pass
-        
         try:
             # Clear screen and show welcome
             self.console.clear()
-            self.console.print(Panel("🔮 [bold cyan]GLOD AI Editor[/bold cyan] - Fullscreen Mode", style="cyan", padding=(0, 1)))
-            self.console.print("[dim]Loading...[/dim]\n")
+            self.console.print(Panel("🔮 [bold cyan]GLOD AI Editor[/bold cyan] - Interactive Mode", style="cyan", padding=(0, 1)))
+            self.console.print("[dim]Ready for input...[/dim]\n")
             
-            # Create layout
-            layout = self._create_layout()
-            
-            with Live(layout, refresh_per_second=4, screen=True) as live:
-                while not self.exit_requested:
-                    # Update layout
-                    self._update_layout(layout)
-                    live.update(layout)
-                    
-                    # Get user input (non-blocking)
-                    try:
-                        user_input = await asyncio.wait_for(
-                            self._get_input_async(), 
-                            timeout=0.25
-                        )
-                        
-                        if user_input is not None:
-                            if user_input.startswith("/"):
-                                await self._handle_command(user_input)
-                            else:
-                                await self._send_message(user_input)
-                            self.input_buffer = ""
-                    except asyncio.TimeoutError:
-                        # No input available, keep updating display
-                        pass
-                    except EOFError:
-                        break
-        
-        except KeyboardInterrupt:
-            pass
-        finally:
-            # Restore original terminal settings
-            if original_settings and tty and termios:
+            while not self.exit_requested:
+                # Display current state
+                self._render_display()
+                
+                # Get user input using Rich's Prompt
                 try:
-                    termios.tcsetattr(sys.stdin, termios.TCSAFLUSH, original_settings)
-                except:
-                    pass
+                    # Create a custom prompt that doesn't add extra output
+                    user_input = self.console.input("\n[bold green]You:[/bold green] ")
+                    
+                    if not user_input.strip():
+                        continue
+                    
+                    if user_input.startswith("/"):
+                        await self._handle_command(user_input)
+                    else:
+                        await self._send_message(user_input)
+                
+                except EOFError:
+                    break
+                except KeyboardInterrupt:
+                    self.console.print("\n[yellow]^C[/yellow]")
+                    break
+        
+        except Exception as e:
+            self.console.print(f"[red]Error in TUI loop:[/red] {e}")
+        finally:
             self.console.clear()
     
-    def _create_layout(self) -> Layout:
-        """Create the main layout structure with responsive sizing"""
-        layout = Layout()
-        # Split vertically: header (fixed 3), main (flex), footer (fixed 3)
-        layout.split_column(
-            Layout(name="header", size=3),
-            Layout(name="main"),
-            Layout(name="footer", size=3),
-        )
-        # Split main area: messages (60% flex), input_section (40% flex)
-        layout["main"].split_row(
-            Layout(name="messages", ratio=3),
-            Layout(name="input_section", ratio=1),
-        )
-        # Split input section: status (fixed 2) above input (flex)
-        layout["input_section"].split_column(
-            Layout(name="status", size=2),
-            Layout(name="input"),
-        )
-        return layout
-
-    def _update_layout(self, layout: Layout) -> None:
-        """Update layout contents"""
+    def _render_display(self) -> None:
+        """Render the current display state"""
+        self.console.clear()
+        
         # Header
         header_text = "🔮 GLOD AI Editor"
         if self.is_processing:
             header_text += " [yellow]⏳ Processing...[/yellow]"
-        layout["header"].update(
-            Panel(header_text, style="cyan", padding=(0, 1), expand=False)
-        )
+        self.console.print(Panel(header_text, style="cyan", padding=(0, 1)))
+        
+        # Status bar
+        server_status = "🟢 Server Running" if self.server_manager.is_running() else "🔴 Server Offline"
+        allowed_dirs_text = f"Allowed: {len(self.allowed_dirs)} dir(s) | Messages: {len(self.messages)}"
+        self.console.print(Panel(
+            f"{server_status}  •  {allowed_dirs_text}",
+            style="dim white",
+            padding=(0, 1),
+        ))
         
         # Messages
-        messages_panel = Panel(
-            self._render_messages(), 
-            style="blue", 
+        self.console.print(Panel(
+            self._render_messages(),
+            style="blue",
             padding=(0, 1),
             title="Messages",
-            expand=True,
-        )
-        layout["messages"].update(messages_panel)
+        ))
         
-        # Status
-        layout["status"].update(self._render_status())
-        
-        # Input
-        input_panel = Panel(
-            self._render_input(), 
-            style="green", 
-            padding=(0, 1), 
-            title="Input",
-            expand=True,
-        )
-        
-        # Footer
-        layout["footer"].update(self._render_footer())
-
-        layout["input"].update(input_panel)
+        # Footer with help
+        self.console.print(Panel(
+            "[dim]/help • /clear • /allow <path> • /server [start|stop|restart|status] • /exit[/dim]",
+            style="dim",
+            padding=(0, 1),
+        ))
+    
     def _render_messages(self) -> str:
         """Render message history with word wrapping"""
         lines = []
@@ -191,86 +138,6 @@ class GlodTUIEditor:
             lines.append("")  # Blank line between messages
         
         return "\n".join(lines) if lines else "[dim]No messages yet. Type a message to start![/dim]"
-    def _render_input(self) -> str:
-        """Render input area"""
-        if self.input_buffer:
-            return self.input_buffer
-        return "[dim]Type your message here...[/dim]"
-    
-    def _render_status(self) -> Panel:
-        """Render status bar"""
-        server_status = "🟢 Server Running" if self.server_manager.is_running() else "🔴 Server Offline"
-        allowed_dirs_text = f"Allowed: {len(self.allowed_dirs)} dir(s) | Messages: {len(self.messages)}"
-        return Panel(
-            f"{server_status}  •  {allowed_dirs_text}", 
-            style="dim white", 
-            padding=(0, 1),
-            expand=False,
-        )
-    
-    def _render_footer(self) -> Panel:
-        """Render footer with help text"""
-        return Panel(
-            "[dim]/help • /clear • /allow <path> • /server [start|stop|restart|status] • /exit[/dim]",
-            style="dim",
-            padding=(0, 1),
-            expand=False,
-        )
-
-
-    
-    async def _get_input_async(self) -> Optional[str]:
-        """Get user input asynchronously using non-blocking stdin"""
-        loop = asyncio.get_event_loop()
-        
-        # Read a single character of input
-        try:
-            char = await loop.run_in_executor(None, self._read_char_nonblocking)
-            
-            if char is None:
-                return None
-            
-            # Handle special keys
-            if char == '\r' or char == '\n':
-                # User pressed enter - return the current buffer
-                result = self.input_buffer
-                self.input_buffer = ""
-                return result if result else None
-            elif char == '\x04':  # Ctrl+D
-                # EOF/exit signal
-                raise EOFError()
-            elif char == '\x08' or char == '\x7f':  # Backspace
-                # Delete last character
-                if self.input_buffer:
-                    self.input_buffer = self.input_buffer[:-1]
-                return None
-            elif char == '\x03':  # Ctrl+C
-                raise KeyboardInterrupt()
-            elif ord(char) >= 32:  # Printable ASCII characters
-                # Add to input buffer
-                self.input_buffer += char
-            
-            return None
-        except (KeyboardInterrupt, EOFError):
-            raise
-
-    
-    def _read_char_nonblocking(self) -> Optional[str]:
-        """Read a single character without blocking"""
-        try:
-            # Set O_NONBLOCK flag if not already set
-            flags = fcntl.fcntl(sys.stdin.fileno(), fcntl.F_GETFL)
-            if not (flags & os.O_NONBLOCK):
-                fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, flags | os.O_NONBLOCK)
-            
-            # Try to read one byte
-            char = os.read(sys.stdin.fileno(), 1)
-            if char:
-                return char.decode('utf-8', errors='ignore')
-            return None
-        except (OSError, IOError):
-            # Would block or other I/O error
-            return None
     
     async def _send_message(self, message: str) -> None:
         """Send a message to the agent"""
@@ -344,6 +211,7 @@ class GlodTUIEditor:
     
     async def _handle_allow_dir(self, dir_path: str) -> None:
         """Handle /allow command"""
+        import os
         abs_path = os.path.abspath(dir_path)
         
         if not os.path.isdir(abs_path):
@@ -396,11 +264,3 @@ class GlodTUIEditor:
         help_text = """[bold cyan]Available Commands:[/bold cyan]
 [yellow]/allow <path>[/yellow]        Add a directory to allowed file access paths
 [yellow]/clear[/yellow]              Clear message history
-[yellow]/server start[/yellow]       Start the agent server
-[yellow]/server stop[/yellow]        Stop the agent server
-[yellow]/server restart[/yellow]     Restart the agent server
-[yellow]/server status[/yellow]      Check agent server status
-[yellow]/help[/yellow]               Show this help message
-[yellow]/exit[/yellow]               Exit GLOD"""
-        
-        self.messages.append(("agent", help_text))

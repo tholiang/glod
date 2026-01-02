@@ -10,41 +10,23 @@ Features:
 - Server status indicator
 """
 import asyncio
-from typing import Optional
 from pathlib import Path
 
 from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
-from rich.text import Text
 from rich.live import Live
-from rich.align import Align
-from rich.table import Table
-from rich.prompt import Prompt
 
-from client_agent import AgentClient
-from server_manager import ServerManager
-from client_lib import (
-    print_success,
-    print_error,
-    print_info,
-    get_console,
-)
+from client_lib import ClientSession
+from util import get_console
 
 
 class GlodTUIEditor:
     """Fullscreen TUI editor for GLOD"""
     
-    def __init__(
-        self, 
-        agent_client: AgentClient,
-        server_manager: ServerManager,
-        allowed_dirs: list[str],
-    ):
+    def __init__(self, session: ClientSession):
         self.console = get_console()
-        self.agent_client = agent_client
-        self.server_manager = server_manager
-        self.allowed_dirs = allowed_dirs
+        self.session = session
         
         # Message history: list of (role, content) tuples
         # role: "user" or "agent"
@@ -85,8 +67,8 @@ class GlodTUIEditor:
         finally:
             self.console.clear()
     
-    def _render_screen(self) -> Panel:
-        """Render the complete screen as a single Panel"""
+    def _render_screen(self) -> Layout:
+        """Render the complete screen as a Layout"""
         # Build message display
         lines = []
         
@@ -111,8 +93,8 @@ class GlodTUIEditor:
             header_text += " [yellow]⏳ Processing...[/yellow]"
         
         # Status bar
-        server_status = "🟢 Server Running" if self.server_manager.is_running() else "🔴 Server Offline"
-        allowed_dirs_text = f"Allowed: {len(self.allowed_dirs)} dir(s) | Messages: {len(self.messages)}"
+        server_status = "🟢 Server Running" if self.session.server_manager.is_running() else "🔴 Server Offline"
+        allowed_dirs_text = f"Allowed: {len(self.session.allowed_dirs)} dir(s) | Messages: {len(self.messages)}"
         
         # Create layout
         layout = Layout()
@@ -147,7 +129,7 @@ class GlodTUIEditor:
             with Live(display, console=self.console, refresh_per_second=20) as live:
                 try:
                     # Stream response
-                    async for chunk in self.agent_client.stream_run(
+                    async for chunk in self.session.agent_client.stream_run(
                         prompt=message,
                         message_history=history_text
                     ):
@@ -176,6 +158,7 @@ class GlodTUIEditor:
             self.streaming_response = ""
     
     async def _handle_command(self, command_str: str) -> None:
+    async def _handle_command(self, command_str: str) -> None:
         """Handle / commands"""
         stripped = command_str.strip()[1:].lower()
         parts = stripped.split(maxsplit=1)
@@ -190,7 +173,8 @@ class GlodTUIEditor:
         
         elif command == "clear":
             self.messages.clear()
-            self.agent_client.clear_history()
+            if self.session.agent_client:
+                self.session.agent_client.clear_history()
             self.messages.append(("agent", "[green]✓ Message history cleared[/green]"))
         
         elif command == "allow":
@@ -204,9 +188,7 @@ class GlodTUIEditor:
         
         else:
             self.messages.append(("agent", f"[red]Unknown command:[/red] /{command}"))
-    
-    async def _handle_allow_dir(self, dir_path: str) -> None:
-        """Handle /allow command"""
+
         import os
         abs_path = os.path.abspath(dir_path)
         
@@ -214,16 +196,16 @@ class GlodTUIEditor:
             self.messages.append(("agent", f"[red]Directory does not exist:[/red] {abs_path}"))
             return
         
-        if abs_path not in self.allowed_dirs:
-            self.allowed_dirs.append(abs_path)
+        if abs_path not in self.session.allowed_dirs:
+            self.session.allowed_dirs.append(abs_path)
         
         try:
-            await self.agent_client.add_allowed_dir(abs_path)
+            await self.session.agent_client.add_allowed_dir(abs_path)
             self.messages.append(("agent", f"[green]✓ Added allowed directory:[/green] {abs_path}"))
         except Exception as e:
             self.messages.append(("agent", f"[red]Failed to add directory:[/red] {str(e)}"))
     
-    async def _handle_server_command(self, subcommand: Optional[str]) -> None:
+    async def _handle_server_command(self, subcommand: None | str) -> None:
         """Handle /server commands"""
         if subcommand is None:
             self.messages.append(("agent", "[yellow]Usage:[/yellow] /server [start|stop|restart|status]"))
@@ -232,22 +214,22 @@ class GlodTUIEditor:
         subcommand = subcommand.lower()
         
         if subcommand == "start":
-            self.server_manager.start()
+            self.session.server_manager.start()
             await asyncio.sleep(1)
             self.messages.append(("agent", "[green]✓ Agent server started[/green]"))
         
         elif subcommand == "stop":
-            self.server_manager.stop()
+            self.session.server_manager.stop()
             self.messages.append(("agent", "[green]✓ Agent server stopped[/green]"))
         
         elif subcommand == "restart":
-            self.server_manager.restart()
+            self.session.server_manager.restart()
             await asyncio.sleep(1)
             self.messages.append(("agent", "[green]✓ Agent server restarted[/green]"))
         
         elif subcommand == "status":
-            if self.server_manager.is_running():
-                pid = self.server_manager.get_pid()
+            if self.session.server_manager.is_running():
+                pid = self.session.server_manager.get_pid()
                 self.messages.append(("agent", f"[green]✓ Agent server is running[/green] (PID: {pid})"))
             else:
                 self.messages.append(("agent", "[red]✗ Agent server is not running[/red]"))

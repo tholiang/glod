@@ -3,10 +3,11 @@
 Client-server AI code editor. Agent runs on FastAPI (port 8000), client communicates via HTTP RPC. Message history stored client-side.
 
 ## Components
-
 - **Client** (`src/main.py`) - CLI, message history, user interaction
+- **Client Library** (`src/client_lib.py`) - Rich formatting utilities for console output
 - **HTTP Client** (`src/client_agent.py`) - Async HTTP communication to agent
 - **Server Manager** (`src/server_manager.py`) - Subprocess manager for agent
+- **Agent Server** (`src/server/agent_server.py`) - FastAPI + Pydantic AI + Claude (to implement)
 - **Agent Server** (`src/server/agent_server.py`) - FastAPI + Pydantic AI + Claude (to implement)
 
 ## Message Flow

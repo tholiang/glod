@@ -26,9 +26,18 @@ from rich import print as rprint
 
 from client_agent import AgentClient
 from server_manager import ServerManager
+from client_lib import (
+    print_welcome,
+    print_success,
+    print_error,
+    print_info,
+    print_response_header,
+    print_response_footer,
+    get_console,
+)
 
 # Initialize Rich console and Typer app
-console = Console()
+console = get_console()
 app = typer.Typer(
     name="glod",
     help="AI Code Editor - Chat with Claude about your codebase",
@@ -44,45 +53,6 @@ allowed_dirs: list[str] = []
 # Track if we're in a tool call/response phase
 _in_tool_phase = False
 _tool_phase_buffer = []
-
-
-def print_welcome():
-    """Display welcome message"""
-    welcome_text = Text.from_markup(
-        "[bold cyan]GLOD[/bold cyan] - [yellow]AI Code Editor[/yellow]"
-    )
-    console.print(
-        Panel(
-            welcome_text,
-            expand=False,
-            border_style="cyan",
-            padding=(1, 2),
-        )
-    )
-
-
-def print_success(message: str):
-    """Print success message"""
-    console.print(f"[green]✓[/green] {message}")
-
-
-def print_error(message: str):
-    """Print error message"""
-    console.print(f"[red]✗[/red] {message}")
-
-
-def print_info(message: str):
-    """Print info message"""
-    console.print(f"[blue]ℹ[/blue] {message}")
-def print_response_header(title: str = "Agent Response"):
-    """Print a nice header for agent response"""
-    console.print()
-    console.print(Panel.fit(f"[bold cyan]{title}[/bold cyan]", border_style="cyan"))
-
-
-def print_response_footer():
-    """Print a footer after agent response"""
-    console.print()
 
 
 async def _entry(prompt: str, stream: bool = True) -> None:
@@ -155,6 +125,16 @@ async def _entry(prompt: str, stream: bool = True) -> None:
         await agent_client.run(prompt)
     
     print_response_footer()
+
+async def _handle_allow_dir_command(dir_path: str) -> None:
+    """Handle /allow commands to add allowed directories"""
+    if not agent_client:
+        print_error("Agent client not initialized")
+        return
+    try:
+        response = await agent_client.add_allowed_dir(dir_path)
+        if response.get("status") == "success":
+            print_success(f"{response.get('message')}")
         else:
             print_error(f"Failed to add directory: {response}")
     except Exception as e:

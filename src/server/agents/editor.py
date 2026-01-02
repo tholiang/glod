@@ -4,7 +4,7 @@ from typing import List, AsyncGenerator
 from pydantic_ai import Agent, AgentRunResultEvent, FunctionToolCallEvent, FunctionToolResultEvent, PartDeltaEvent, PartEndEvent, PartStartEvent, RetryPromptPart, TextPart, TextPartDelta, ToolCallPart, BuiltinToolCallPart, BuiltinToolReturnPart, ThinkingPart, FilePart, ToolReturnPart, ModelMessage
 from pydantic_ai.models.anthropic import AnthropicModel
 from server.app import get_app
-from server.tools import files, git
+from server.tools import files, git, agents
 
 _DEFAULT_SYS_PROMPT = f"""
 You are a coding assistant helping develop GLOD.
@@ -25,6 +25,7 @@ Do not make checklists or progress reports. Keep doc files to a single file per 
 Use the `get_project_overview` tool to gain context about the project.
 
 You also have access to git tools for version control operations.
+You can spawn subagents for specialized tasks using the spawn_subagent tool.
 """
 
 def _sys_prompt_with_dirs() -> str:
@@ -37,8 +38,8 @@ allowed directories:{'\n'.join(dirs)}
 """
 
 def _get_all_tools() -> List:
-    """Get all available tools: file operations and git operations"""
-    return files.get_pydantic_tools() + git.get_pydantic_git_tools()
+    """Get all available tools: file operations, git operations, and subagent spawning"""
+    return files.get_pydantic_tools() + git.get_pydantic_git_tools() + agents.get_pydantic_agent_tools()
     
 async def editor_run(prompt: str, message_history: List[ModelMessage]) -> str:
     """Run agent with provided message history (stateless)"""
@@ -91,5 +92,3 @@ async def editor_run_stream(prompt: str, message_history: List[ModelMessage]) ->
                 yield f"\nretry: {event.result.content}"
         elif isinstance(event, AgentRunResultEvent):
             message_history.extend(event.result.new_messages())
-
-

@@ -251,6 +251,28 @@ def insert(filepath: str, line_number: int, text: str) -> str:
         return f"error: {e}"
 
 
+def replace(filepath: str, start_line: int, end_line: int, text: str) -> str:
+    """
+    Replace lines in a file (1-indexed) with provided text.
+    
+    Args:
+        filepath: Path to the file
+        start_line: Line number where start replacement (inclusive)
+        end_line: Line number where end replacement (inclusive)
+        text: Text to insert (newlines will be added automatically)
+    
+    Returns:
+        Success message or error message
+    """
+    delete_resp = delete(filepath, start_line, end_line)
+    if "error" in delete_resp:
+        return delete_resp
+    insert_resp = insert(filepath, start_line, text)
+    if "error" in insert_resp:
+        return insert_resp
+    return f"success: replaced text from {start_line}:{end_line}"
+
+
 def get_pydantic_tools() -> List[Tool]:
     return [
         Tool(list_files, takes_ctx=False),
@@ -260,6 +282,7 @@ def get_pydantic_tools() -> List[Tool]:
         Tool(delete, takes_ctx=False),
         Tool(rm, takes_ctx=False),
         Tool(insert, takes_ctx=False),
+        Tool(replace, takes_ctx=False),
         Tool(mkdir, takes_ctx=False),
         Tool(mv, takes_ctx=False)
     ]

@@ -122,7 +122,7 @@ class GlodTUIEditor:
         """Create the main layout structure with responsive sizing"""
         layout = Layout()
         # Split vertically: header (fixed 3), main (flex), footer (fixed 3)
-        layout.split_vertical(
+        layout.split_column(
             Layout(name="header", size=3),
             Layout(name="main"),
             Layout(name="footer", size=3),
@@ -133,7 +133,7 @@ class GlodTUIEditor:
             Layout(name="input_section", ratio=1),
         )
         # Split input section: status (fixed 2) above input (flex)
-        layout["input_section"].split_vertical(
+        layout["input_section"].split_column(
             Layout(name="status", size=2),
             Layout(name="input"),
         )
@@ -217,6 +217,42 @@ class GlodTUIEditor:
             expand=False,
         )
 
+
+    
+    async def _get_input_async(self) -> Optional[str]:
+        """Get user input asynchronously using non-blocking stdin"""
+        loop = asyncio.get_event_loop()
+        
+        # Read a single character of input
+        try:
+            char = await loop.run_in_executor(None, self._read_char_nonblocking)
+            
+            if char is None:
+                return None
+            
+            # Handle special keys
+            if char == '\r' or char == '\n':
+                # User pressed enter - return the current buffer
+                result = self.input_buffer
+                self.input_buffer = ""
+                return result if result else None
+            elif char == '\x04':  # Ctrl+D
+                # EOF/exit signal
+                raise EOFError()
+            elif char == '\x08' or char == '\x7f':  # Backspace
+                # Delete last character
+                if self.input_buffer:
+                    self.input_buffer = self.input_buffer[:-1]
+                return None
+            elif char == '\x03':  # Ctrl+C
+                raise KeyboardInterrupt()
+            elif ord(char) >= 32:  # Printable ASCII characters
+                # Add to input buffer
+                self.input_buffer += char
+            
+            return None
+        except (KeyboardInterrupt, EOFError):
+            raise
 
     
     def _read_char_nonblocking(self) -> Optional[str]:

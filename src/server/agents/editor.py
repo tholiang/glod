@@ -3,7 +3,7 @@ from typing import List, AsyncGenerator
 
 from pydantic_ai import Agent, AgentRunResultEvent, FunctionToolCallEvent, FunctionToolResultEvent, PartDeltaEvent, PartEndEvent, PartStartEvent, RetryPromptPart, TextPart, TextPartDelta, ToolCallPart, BuiltinToolCallPart, BuiltinToolReturnPart, ThinkingPart, FilePart, ToolReturnPart, ModelMessage, UsageLimits
 from pydantic_ai.models.anthropic import AnthropicModel
-from server.app import get_app
+from server.tools import files, git, agents, code_understanding
 from server.tools import files, git, agents
 
 _DEFAULT_SYS_PROMPT = f"""
@@ -29,8 +29,9 @@ You can spawn subagents for specialized tasks using the spawn_subagent tool.
 """
 
 def _sys_prompt_with_dirs() -> str:
-    app = get_app()
-    dirs = [str(path) for path in app.get_allowed_paths()]
+You also have access to git tools for version control operations.
+You can spawn subagents for specialized tasks using the spawn_subagent tool.
+You have code understanding tools to analyze Python code structure, imports, and type information.
 
     return f"""
 {_DEFAULT_SYS_PROMPT}
@@ -39,8 +40,9 @@ allowed directories:{'\n'.join(dirs)}
 
 def _get_all_tools() -> List:
     """Get all available tools: file operations, git operations, and subagent spawning"""
-    return files.get_pydantic_tools() + git.get_pydantic_git_tools() + agents.get_pydantic_agent_tools()
-    
+def _get_all_tools() -> List:
+    """Get all available tools: file operations, git operations, code understanding, and subagent spawning"""
+    return files.get_pydantic_tools() + git.get_pydantic_git_tools() + code_understanding.get_pydantic_tools() + agents.get_pydantic_agent_tools()
 async def editor_run(prompt: str, message_history: List[ModelMessage]) -> str:
     """Run agent with provided message history (stateless)"""
     model = AnthropicModel('claude-haiku-4-5')

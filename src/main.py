@@ -60,6 +60,11 @@ async def _entry(prompt: str, stream: bool = True) -> None:
     Send request to agent and display response.
     
     Args:
+async def _entry(prompt: str, stream: bool = True) -> None:
+    """
+    Send request to agent and display response.
+    
+    Args:
         prompt: The user's prompt
         stream: Whether to use streaming response (default True)
     """
@@ -76,32 +81,24 @@ async def _entry(prompt: str, stream: bool = True) -> None:
         console.print(Panel("🔧 [bold yellow]Tool Calls[/bold yellow]", border_style="yellow", padding=(0, 1)))
     
     def on_tool_call(content: str):
-        """Handle tool call event"""
-        # Parse the tool call to extract tool name and params
-        # For now, just print it formatted nicely
-        lines = content.strip().split('\n')
-        if lines:
-            first_line = lines[0]
-            # Try to extract tool name (typically format: "Calling tool: <name>" or similar)
-            if 'Calling' in first_line or 'tool' in first_line.lower():
-                console.print(f"  [yellow]→[/yellow] {first_line}")
-                for line in lines[1:]:
-                    console.print(f"    {line}")
-            else:
-                console.print(f"  [yellow]→[/yellow] {content}")
-        tool_buffer.append(content)
+        """Handle tool call event - display tool name and params distinctly"""
+        # Content is already formatted as "tool_name(args)"
+        console.print(f"  [bold yellow]→[/bold yellow] [cyan]{content}[/cyan]")
+        tool_buffer.append(("call", content))
     
     def on_tool_result(content: str):
-        """Handle tool result event"""
-        # Format as a nice result box
+        """Handle tool result event - display result distinctly"""
+        # Show result with visual distinction
         lines = content.strip().split('\n')
-        if len(lines) > 1:
-            console.print(f"  [blue]←[/blue] [dim]{lines[0]}[/dim]")
+        if len(lines) == 1 and len(content) < 80:
+            # Short result on one line
+            console.print(f"  [bold blue]←[/bold blue] [dim]{content}[/dim]")
+        else:
+            # Multi-line result with indentation
+            console.print(f"  [bold blue]←[/bold blue] [dim]{lines[0]}[/dim]")
             for line in lines[1:]:
                 console.print(f"      {line}")
-        else:
-            console.print(f"  [blue]←[/blue] {content}")
-        tool_buffer.append(content)
+        tool_buffer.append(("result", content))
     
     def on_tool_phase_end():
         """Called when exiting tool call/result phase"""
@@ -118,6 +115,14 @@ async def _entry(prompt: str, stream: bool = True) -> None:
     agent_client.on_tool_result = on_tool_result
     agent_client.on_tool_phase_end = on_tool_phase_end
     agent_client.on_chunk = on_chunk
+    
+    if stream:
+        await agent_client.run_stream(prompt)
+    else:
+        await agent_client.run(prompt)
+    
+    print_response_footer()
+
     
     if stream:
         await agent_client.run_stream(prompt)

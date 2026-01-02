@@ -14,6 +14,7 @@ import time
 import asyncio
 import socket
 from pathlib import Path
+from client_lib import print_success, print_error, print_info
 
 
 class ServerManager:
@@ -40,7 +41,7 @@ class ServerManager:
             True if started successfully, False otherwise
         """
         if self.process is not None and self.process.poll() is None:
-            print("⚠️  Agent server is already running (PID: {})".format(self.process.pid))
+            print_info(f"Agent server is already running (PID: {self.process.pid})")
             return True
         
         try:
@@ -57,17 +58,17 @@ class ServerManager:
             
             # Check if process is still running
             if self.process.poll() is None:
-                print(f"✅ Agent server started (PID: {self.process.pid})")
+                print_success(f"Agent server started (PID: {self.process.pid})")
                 return True
             else:
                 # Process died immediately
                 _, stderr = self.process.communicate()
-                print(f"❌ Failed to start agent server:\n{stderr}")
+                print_error(f"Failed to start agent server:\n{stderr}")
                 self.process = None
                 return False
                 
         except Exception as e:
-            print(f"❌ Error starting agent server: {e}")
+            print_error(f"Error starting agent server: {e}")
             self.process = None
             return False
             
@@ -87,7 +88,7 @@ class ServerManager:
                 # Wait up to 5 seconds for graceful shutdown
                 try:
                     self.process.wait(timeout=5)
-                    print("✅ Agent server stopped")
+                    print_success("Agent server stopped")
                     self.process = None
                     stopped = True
                 except subprocess.TimeoutExpired:
@@ -95,18 +96,18 @@ class ServerManager:
                     if self.process is not None:
                         self.process.kill()
                         self.process.wait()
-                        print("✅ Agent server killed")
+                        print_success("Agent server killed")
                     self.process = None
                     stopped = True
                     
             except Exception as e:
-                print(f"❌ Error stopping agent server: {e}")
+                print_error(f"Error stopping agent server: {e}")
                 self.process = None
                 return False
         
         # If no process reference but port is in use, kill the process on that port
         if not stopped and self._is_port_in_use(8000):
-            print("⚠️  No local process reference, but server is running on port 8000. Attempting to kill...")
+            print_info("No local process reference, but server is running on port 8000. Attempting to kill...")
             try:
                 # Use lsof to find and kill the process on port 8000
                 result = subprocess.run(
@@ -118,15 +119,15 @@ class ServerManager:
                     pid = result.stdout.splitlines()[0].strip()
                     subprocess.run(["kill", pid])
                     time.sleep(1)
-                    print(f"✅ Agent server killed (PID: {pid})")
+                    print_success(f"Agent server killed (PID: {pid})")
                     stopped = True
             except Exception as e:
-                print(f"❌ Error killing process on port 8000: {e}")
+                print_error(f"Error killing process on port 8000: {e}")
                 return False
         
         # If nothing was stopped, log it only if port is truly not in use
         if not stopped and not self._is_port_in_use(8000):
-            print("⚠️  Agent server is not running")
+            print_info("Agent server is not running")
         
         return True
     
@@ -137,7 +138,7 @@ class ServerManager:
         Returns:
             True if restarted successfully, False otherwise
         """
-        print("Restarting agent server...")
+        print_info("Restarting agent server...")
         self.stop()
         time.sleep(2)  # Give server more time to fully initialize after restart
         return self.start()

@@ -8,8 +8,8 @@ Uses Typer + Rich for beautiful, modern terminal UI.
 - **Typer commands**: Structured command handling with validation
 - **Styled prompts**: Cyan colored `>` prompt with clear visual feedback
 - **Status messages**: Green checkmarks for success, red X for errors, blue info icons
-- **Response separation**: Tool calls/results visually separated from final agent response
-- **Tool phase tracking**: Clear panel headers when agent executes tools
+- **Distinct tool display**: Tool calls and results visually separated from agent response
+- **Tool phase tracking**: Yellow "Tool Calls" panel header, Cyan "Response" panel header
 - **Help tables**: Commands displayed in formatted tables
 
 ## Display Components
@@ -21,14 +21,16 @@ Uses Typer + Rich for beautiful, modern terminal UI.
 - `print_welcome()` - Cyan title panel on startup
 - `print_help()` - Formatted command table
 
-### Response Handling
-- `print_response_footer()` - Space after agent output
-- Event handlers in `_entry()` for real-time formatting:
-  - `on_tool_phase_start()` - "🔧 Tool Calls" panel
-  - `on_tool_call(content)` - Format tool invocation with arrows
-  - `on_tool_result(content)` - Format result with response arrow
-  - `on_tool_phase_end()` - "📝 Response" panel header
-  - `on_chunk(content)` - Direct output of final response text
+### Tool Call Rendering
+Tool calls and results flow through event handlers in `_entry()`:
+
+- `on_tool_phase_start()` - Yellow panel: "🔧 Tool Calls"
+- `on_tool_call(content)` - Yellow arrow `→` with cyan tool name and args
+- `on_tool_result(content)` - Blue arrow `←` with dimmed result (single line or multi-line indented)
+- `on_tool_phase_end()` - Cyan panel: "📝 Response"
+- `on_chunk(content)` - Direct output of final response text
+
+Tool call format: `tool_name(args)` - sent by server as `"tool_call"` event type, not plaintext chunks.
 
 ## Command Handling
 

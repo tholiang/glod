@@ -53,9 +53,14 @@ async def editor_run(prompt: str, message_history: List[ModelMessage]) -> str:
     message_history.extend(result.new_messages())
     return result.output
 
-async def editor_run_stream(prompt: str, message_history: List[ModelMessage]) -> AsyncGenerator[str]:
+async def editor_run_stream(prompt: str, message_history: List[ModelMessage]) -> AsyncGenerator[tuple[str, str]]:
     """
-    Streaming version that yields events as they occur.
+    Streaming version that yields (event_type, content) tuples.
+    
+    Event types:
+    - "chunk": Regular response text
+    - "tool_call": Tool invocation with name and args
+    - "tool_result": Result from tool execution
     
     After streaming is complete, call get_new_messages() to get messages
     to add to client history.
@@ -75,20 +80,21 @@ async def editor_run_stream(prompt: str, message_history: List[ModelMessage]) ->
     async for event in agent.run_stream_events(prompt, message_history=message_history):
         if isinstance(event, PartStartEvent):
             if isinstance(event.part, TextPart):
-                yield event.part.content
+                yield ("chunk", event.part.content)
         elif isinstance(event, PartDeltaEvent):
             if isinstance(event.delta, TextPartDelta):
-                yield event.delta.content_delta
+                yield ("chunk", event.delta.content_delta)
         elif isinstance(event, FunctionToolCallEvent):
-            yield f"\n----------\ncalling tool: {event.part.tool_name} {event.part.args}\n...\n"
+            # Emit tool call event with clean formatting
+            tool_call_str = f"{event.part.tool_name}({event.part.args})"
+            yield ("tool_call", tool_call_str)
         elif isinstance(event, FunctionToolResultEvent):
             if isinstance(event.result, ToolReturnPart):
                 output = str(event.result.content)
-                if len(output.splitlines()) > 10:
-                    yield "10 line output\n----------\n"
-                else:
-                    yield f"\ncalling tool: {event.result.content}\n----------\n"
+                # Emit tool result event
+                yield ("tool_result", output)
             elif isinstance(event.result, RetryPromptPart):
-                yield f"\nretry: {event.result.content}"
+                yield ("tool_result", f"retry: {event.result.content}")
         elif isinstance(event, AgentRunResultEvent):
             message_history.extend(event.result.new_messages())
+

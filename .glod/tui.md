@@ -39,3 +39,13 @@ python src/main.py --cli    # Legacy CLI mode
 
 Input is line-buffered. Type normally and press Enter to accumulate lines, then use command to submit (e.g., `/exit` to quit, or send message after input is ready).
 
+
+
+## Architecture Notes
+
+- **Rich Live + Layout** - `Live` renders fullscreen with 2 FPS refresh, `Layout` manages split panels
+- **Event Handlers** - Agent responses streamed via `on_chunk` callback
+- **Message History** - Stored as list of tuples, last 20 shown (scrolls automatically)
+- **Input Buffering** - Each typed line accumulates in `input_lines[]` for multi-line support
+- **Async Input** - Uses `loop.run_in_executor()` to prevent blocking the Live display
+

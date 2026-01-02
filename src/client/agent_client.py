@@ -115,6 +115,7 @@ class AgentClient:
         Send a prompt to the agent server with streaming response.
         
         Uses Server-Sent Events (SSE) to stream chunks as they arrive.
+        Outputs directly to stdout (legacy method for CLI).
         
         Args:
             prompt: The user's prompt

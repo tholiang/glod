@@ -51,6 +51,7 @@ class GlodTUIEditor:
         self.messages: list[tuple[str, str]] = []
         self.is_processing = False
         self.exit_requested = False
+        self.streaming_response = ""  # Current streaming response being built
     
     async def run(self) -> None:
         """Main TUI loop"""
@@ -61,7 +62,7 @@ class GlodTUIEditor:
             self.console.print("[dim]Ready for input...[/dim]\n")
             
             while not self.exit_requested:
-                # Display current state
+                # Display current state with Live updating
                 self._render_display()
                 
                 # Get user input using Rich's Prompt
@@ -126,8 +127,8 @@ class GlodTUIEditor:
         """Render message history with word wrapping"""
         lines = []
         
-        # Show last 20 messages
-        for role, content in self.messages[-20:]:
+        # Show all messages
+        for role, content in self.messages:
             if role == "user":
                 lines.append(f"[bold blue]You:[/bold blue]")
                 lines.append(f"  {content}")
@@ -140,13 +141,14 @@ class GlodTUIEditor:
         return "\n".join(lines) if lines else "[dim]No messages yet. Type a message to start![/dim]"
     
     async def _send_message(self, message: str) -> None:
-        """Send a message to the agent"""
+        """Send a message to the agent with streaming updates"""
         if not message.strip():
             return
         
         # Add user message to history
         self.messages.append(("user", message))
         self.is_processing = True
+        self.streaming_response = ""
         
         try:
             # Format message history for agent
@@ -155,29 +157,87 @@ class GlodTUIEditor:
                 for role, content in self.messages[:-1]  # Exclude the current message
             ])
             
-            # Stream response
-            full_response = ""
+            # Create a Live display for streaming updates
+            live = Live(self.console)
             
-            async for chunk in self.agent_client.stream_run(
-                prompt=message,
-                message_history=history_text
-            ):
-                full_response += chunk
-                # Update the display with streaming response
-                if self.messages and self.messages[-1][0] == "agent":
-                    self.messages[-1] = ("agent", full_response)
-                else:
-                    self.messages.append(("agent", full_response))
+            async def update_display():
+                """Update display in a loop while streaming"""
+                while self.is_processing:
+                    # Render current state
+                    display_content = self._render_live_display()
+                    live.update(display_content, refresh=True)
+                    await asyncio.sleep(0.05)  # Update every 50ms
             
-            # Ensure the final response is stored
-            if full_response and (not self.messages or self.messages[-1][0] != "agent"):
-                self.messages.append(("agent", full_response))
+            # Start display update task
+            update_task = asyncio.create_task(update_display())
+            
+            try:
+                # Stream response
+                async for chunk in self.agent_client.stream_run(
+                    prompt=message,
+                    message_history=history_text
+                ):
+                    self.streaming_response += chunk
+                
+                # Add final response to messages
+                if self.streaming_response:
+                    self.messages.append(("agent", self.streaming_response))
+            
+            finally:
+                # Stop the display update task
+                self.is_processing = False
+                update_task.cancel()
+                try:
+                    await update_task
+                except asyncio.CancelledError:
+                    pass
+                live.stop()
         
         except Exception as e:
             self.messages.append(("agent", f"[red]Error:[/red] {str(e)}"))
         
         finally:
             self.is_processing = False
+            self.streaming_response = ""
+    
+    def _render_live_display(self) -> Panel:
+        """Render display content for Live updates"""
+        # Header
+        header_text = "🔮 GLOD AI Editor"
+        if self.is_processing:
+            header_text += " [yellow]⏳ Processing...[/yellow]"
+        
+        # Status bar
+        server_status = "🟢 Server Running" if self.server_manager.is_running() else "🔴 Server Offline"
+        allowed_dirs_text = f"Allowed: {len(self.allowed_dirs)} dir(s) | Messages: {len(self.messages)}"
+        
+        # Build complete message display including streaming response
+        lines = []
+        
+        for role, content in self.messages:
+            if role == "user":
+                lines.append(f"[bold blue]You:[/bold blue]")
+                lines.append(f"  {content}")
+            else:
+                lines.append(f"[bold green]Agent:[/bold green]")
+                lines.append(f"  {content}")
+            
+            lines.append("")
+        
+        # Add streaming response if any
+        if self.streaming_response:
+            lines.append(f"[bold green]Agent:[/bold green]")
+            lines.append(f"  {self.streaming_response}")
+        
+        messages_content = "\n".join(lines) if lines else "[dim]No messages yet. Type a message to start![/dim]"
+        
+        # Return the complete display as a Panel
+        return Panel(
+            messages_content,
+            style="blue",
+            padding=(0, 1),
+            title="Messages",
+        )
     
     async def _handle_command(self, command_str: str) -> None:
         """Handle / commands"""
@@ -273,4 +333,3 @@ class GlodTUIEditor:
         
         self.messages.append(("agent", help_text))
 
-        

@@ -59,6 +59,12 @@ def _deserialize_message_history(message_history: str) -> list[ModelMessage]:
 
 async def _process_request(prompt: str, message_history: str) -> str:
     """Process a single prompt with the agent"""
+    try:
+        result = await editor_run(prompt, message_history=_deserialize_message_history(message_history))
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 async def _stream_generator(prompt: str, message_history: str) -> AsyncGenerator[str]:
     """
     Generator that yields Server-Sent Events as the agent streams responses.
@@ -71,26 +77,6 @@ async def _stream_generator(prompt: str, message_history: str) -> AsyncGenerator
         async for event_type, content in editor_run_stream(prompt, deserialized_history):
             # Emit properly typed events
             event = StreamEvent(type=event_type, content=content)
-            yield event.to_sse()
-        
-        # Send completion event with final message history
-        completion_event = StreamEvent(
-            type="complete",
-            content=_serialize_message_history(deserialized_history)
-        )
-        yield completion_event.to_sse()
-        
-    except Exception as e:
-        error_event = StreamEvent(type="error", content=str(e))
-        yield error_event.to_sse()
-
-    """
-    try:
-        deserialized_history = _deserialize_message_history(message_history)
-        # Process the stream
-        async for chunk in editor_run_stream(prompt, deserialized_history):
-            # Each chunk is a text piece, wrap it in an event
-            event = StreamEvent(type="chunk", content=chunk)
             yield event.to_sse()
         
         # Send completion event with final message history

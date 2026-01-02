@@ -81,7 +81,7 @@ async def editor_run_stream(prompt: str, message_history: List[ModelMessage]) ->
         if isinstance(event, PartStartEvent):
             if isinstance(event.part, TextPart):
                 yield ("chunk", event.part.content)
-        elif isinstance(event, PartDeltaEvent):
+        if isinstance(event, PartDeltaEvent):
             if isinstance(event.delta, TextPartDelta):
                 yield ("chunk", event.delta.content_delta)
         elif isinstance(event, FunctionToolCallEvent):

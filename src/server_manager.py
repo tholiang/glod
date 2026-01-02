@@ -22,8 +22,10 @@ class ServerManager:
     
     def __init__(self, project_root: Path | None = None):
         self.process = None
-        self.project_root = project_root or Path(__file__).parent.parent
-    
+        # project_root defaults to the directory from which the CLI was invoked
+        self.project_root = project_root or Path.cwd()
+
+
     def _is_port_in_use(self, port: int = 8000) -> bool:
         """Check if the server port is already in use (indicates server is running)"""
         try:
@@ -48,11 +50,12 @@ class ServerManager:
             # Start the server using python -m
             self.process = subprocess.Popen(
                 [sys.executable, "-m", "server.agent_server"],
-                cwd=str(self.project_root / "src"),
+                cwd=str(self.project_root),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
+
             # Give the server a moment to start
             time.sleep(1)
             

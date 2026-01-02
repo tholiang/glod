@@ -46,7 +46,9 @@ app = typer.Typer(
 )
 
 # Global instances
-server_manager = ServerManager(project_root=Path(__file__).parent.parent)
+server_manager = ServerManager(project_root=Path(os.getcwd()))
+
+
 agent_client: Optional[AgentClient] = None
 allowed_dirs: list[str] = []
 
@@ -54,12 +56,6 @@ allowed_dirs: list[str] = []
 _in_tool_phase = False
 _tool_phase_buffer = []
 
-
-async def _entry(prompt: str, stream: bool = True) -> None:
-    """
-    Send request to agent and display response.
-    
-    Args:
 async def _entry(prompt: str, stream: bool = True) -> None:
     """
     Send request to agent and display response.
@@ -123,25 +119,27 @@ async def _entry(prompt: str, stream: bool = True) -> None:
     
     print_response_footer()
 
-    
-    if stream:
-        await agent_client.run_stream(prompt)
-    else:
-        await agent_client.run(prompt)
-    
-    print_response_footer()
 
 async def _handle_allow_dir_command(dir_path: str) -> None:
     """Handle /allow commands to add allowed directories"""
     if not agent_client:
         print_error("Agent client not initialized")
         return
+    
+    abs_path = os.path.abspath(dir_path)
+    
+    # Check if directory exists
+    if not os.path.isdir(abs_path):
+        print_error(f"Directory does not exist: {abs_path}")
+        return
+    
+    # Add to allowed dirs list if not already present
+    if abs_path not in allowed_dirs:
+        allowed_dirs.append(abs_path)
+    
     try:
-        response = await agent_client.add_allowed_dir(dir_path)
-        if response.get("status") == "success":
-            print_success(f"{response.get('message')}")
-        else:
-            print_error(f"Failed to add directory: {response}")
+        await agent_client.add_allowed_dir(abs_path)
+        print_success(f"Added allowed directory: {abs_path}")
     except Exception as e:
         print_error(f"Failed to add allowed directory: {str(e)}")
 

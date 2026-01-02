@@ -16,7 +16,6 @@ import fcntl
 from typing import Optional
 from pathlib import Path
 
-
 from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
@@ -24,7 +23,6 @@ from rich.text import Text
 from rich.live import Live
 from rich.align import Align
 from rich.table import Table
-from rich.console import ConsoleOptions, RenderResult
 
 from client_agent import AgentClient
 from server_manager import ServerManager
@@ -64,56 +62,6 @@ class GlodTUIEditor:
         self.is_processing = False
         self.exit_requested = False
     
-    async def run(self) -> None:
-        """Main TUI loop"""
-        try:
-            # Clear screen and show welcome
-            self.console.clear()
-            self.console.print(Panel("🔮 [bold cyan]GLOD AI Editor[/bold cyan] - Fullscreen Mode", style="cyan", padding=(0, 1)))
-            self.console.print("[dim]Loading...[/dim]\n")
-            
-            # Create layout
-            layout = self._create_layout()
-            
-            with Live(layout, refresh_per_second=4, screen=True) as live:
-                while not self.exit_requested:
-                    # Update layout
-                    self._update_layout(layout)
-                    live.update(layout)
-                    
-                    # Get user input (non-blocking)
-                    try:
-                        user_input = await asyncio.wait_for(
-                            self._get_input_async(), 
-                            timeout=0.25
-                        )
-                        
-                        if user_input is not None:
-                            if user_input.startswith("/"):
-                                await self._handle_command(user_input)
-                            else:
-                                await self._send_message(user_input)
-                            self.input_buffer = ""
-                    except asyncio.TimeoutError:
-                        # No input available, keep updating display
-                        pass
-                    except EOFError:
-                        break
-        
-        except KeyboardInterrupt:
-            pass
-        finally:
-            self.console.clear()
-    
-    def _create_layout(self) -> Layout:
-        """Create the main layout structure"""
-        layout = Layout()
-        layout.split(
-            Layout(name="header", size=3),
-            Layout(name="main"),
-            Layout(name="footer", size=3),
-        )
-        layout["main"].split_column(
     async def run(self) -> None:
         """Main TUI loop"""
         # Save original terminal settings
@@ -169,11 +117,66 @@ class GlodTUIEditor:
                 except:
                     pass
             self.console.clear()
-
-                    lines.append(f"    [dim]... ({len(content_lines) - 5} more lines)[/dim]")
+    
+    def _create_layout(self) -> Layout:
+        """Create the main layout structure"""
+        layout = Layout()
+        layout.split(
+            Layout(name="header", size=3),
+            Layout(name="main"),
+            Layout(name="footer", size=3),
+        )
+        layout["main"].split_column(
+            Layout(name="messages"),
+            Layout(name="status", size=2),
+            Layout(name="input", size=4),
+        )
+        return layout
+    
+    def _update_layout(self, layout: Layout) -> None:
+        """Update layout contents"""
+        # Header
+        header_text = "🔮 GLOD AI Editor"
+        if self.is_processing:
+            header_text += " [yellow]⏳ Processing...[/yellow]"
+        layout["header"].update(
+            Panel(header_text, style="cyan", padding=(0, 1))
+        )
+        
+        # Messages
+        layout["messages"].update(
+            Panel(self._render_messages(), style="blue", padding=(0, 1))
+        )
+        
+        # Status
+        layout["status"].update(self._render_status())
+        
+        # Input
+        layout["input"].update(
+            Panel(self._render_input(), style="green", padding=(0, 1), title="Input")
+        )
+        
+        # Footer
+        layout["footer"].update(self._render_footer())
+    
+    def _render_messages(self) -> str:
+        """Render message history"""
+        lines = []
+        
+        # Show last 20 messages
+        for role, content in self.messages[-20:]:
+            if role == "user":
+                lines.append(f"[bold blue]You:[/bold blue] {content}")
+            else:
+                lines.append(f"[bold green]Agent:[/bold green] {content}")
+            
+            # Truncate long messages
+            content_lines = content.split("\n")
+            if len(content_lines) > 5:
+                lines.append(f"    [dim]... ({len(content_lines) - 5} more lines)[/dim]")
             lines.append("")  # Blank line between messages
         
-        return "\n".join(lines)
+        return "\n".join(lines) if lines else "[dim]No messages yet. Type a message to start![/dim]"
     
     def _render_input(self) -> str:
         """Render input area"""
@@ -199,31 +202,7 @@ class GlodTUIEditor:
         """Get user input asynchronously using non-blocking stdin"""
         loop = asyncio.get_event_loop()
         
-        # Read a single line of input
-        try:
-            char = await loop.run_in_executor(None, self._read_char_nonblocking)
-            
-            if char is None:
-                return None
-            
-            if char == '\n':
-                # User pressed enter - return the current buffer
-                result = self.input_buffer
-                self.input_buffer = ""
-                return result if result else None
-            elif char == '\x04':  # Ctrl+D
-                # EOF/exit signal
-                raise EOFError()
-            elif char == '\x08' or char == '\x7f':  # Backspace
-                # Delete last character
-                if self.input_buffer:
-                    self.input_buffer = self.input_buffer[:-1]
-            elif char == '\x03':  # Ctrl+C
-    async def _get_input_async(self) -> Optional[str]:
-        """Get user input asynchronously using non-blocking stdin"""
-        loop = asyncio.get_event_loop()
-        
-        # Read a single line of input
+        # Read a single character of input
         try:
             char = await loop.run_in_executor(None, self._read_char_nonblocking)
             
@@ -243,11 +222,17 @@ class GlodTUIEditor:
                 # Delete last character
                 if self.input_buffer:
                     self.input_buffer = self.input_buffer[:-1]
+                return None
             elif char == '\x03':  # Ctrl+C
                 raise KeyboardInterrupt()
             elif ord(char) >= 32:  # Printable ASCII characters
                 # Add to input buffer
                 self.input_buffer += char
+            
+            return None
+        except (KeyboardInterrupt, EOFError):
+            raise
+    
     def _read_char_nonblocking(self) -> Optional[str]:
         """Read a single character without blocking"""
         try:
@@ -264,17 +249,39 @@ class GlodTUIEditor:
         except (OSError, IOError):
             # Would block or other I/O error
             return None
-
-            # Try to read one byte
-            char = os.read(sys.stdin.fileno(), 1)
-            if char:
-                return char.decode('utf-8', errors='ignore')
-            return None
-        except (OSError, IOError):
-            # Would block or other I/O error
-            return None
-
-            if full_response:
+    
+    async def _send_message(self, message: str) -> None:
+        """Send a message to the agent"""
+        if not message.strip():
+            return
+        
+        # Add user message to history
+        self.messages.append(("user", message))
+        self.is_processing = True
+        
+        try:
+            # Format message history for agent
+            history_text = "\n".join([
+                f"{'User' if role == 'user' else 'Agent'}: {content}"
+                for role, content in self.messages[:-1]  # Exclude the current message
+            ])
+            
+            # Stream response
+            full_response = ""
+            
+            async for chunk in self.agent_client.stream_run(
+                prompt=message,
+                message_history=history_text
+            ):
+                full_response += chunk
+                # Update the display with streaming response
+                if self.messages and self.messages[-1][0] == "agent":
+                    self.messages[-1] = ("agent", full_response)
+                else:
+                    self.messages.append(("agent", full_response))
+            
+            # Ensure the final response is stored
+            if full_response and (not self.messages or self.messages[-1][0] != "agent"):
                 self.messages.append(("agent", full_response))
         
         except Exception as e:
@@ -375,4 +382,3 @@ class GlodTUIEditor:
 [yellow]/exit[/yellow]               Exit GLOD"""
         
         self.messages.append(("agent", help_text))
-            

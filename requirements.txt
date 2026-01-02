@@ -3,3 +3,6 @@ pathlib>=1.0.0
 setuptools>=80.0.0
 pydantic-ai>=1.39.0
 fastapi>=0.128.0
+typer>=0.9.0
+rich>=13.0.0
+httpx>=0.25.0

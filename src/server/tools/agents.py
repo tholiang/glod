@@ -80,7 +80,7 @@ Report your findings and actions clearly."""
     agent = Agent(
         model,
         system_prompt=sys_prompt,
-        tools=selected_tools if selected_tools else None
+        tools=selected_tools if selected_tools else []
     )
     
     try:

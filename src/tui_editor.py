@@ -130,16 +130,6 @@ class GlodTUIEditor:
         # Show all messages
         for role, content in self.messages:
             if role == "user":
-                lines.append(f"[bold blue]You:[/bold blue]")
-                lines.append(f"  {content}")
-            else:
-                lines.append(f"[bold green]Agent:[/bold green]")
-                lines.append(f"  {content}")
-            
-            lines.append("")  # Blank line between messages
-        
-        return "\n".join(lines) if lines else "[dim]No messages yet. Type a message to start![/dim]"
-    
     async def _send_message(self, message: str) -> None:
         """Send a message to the agent with streaming updates"""
         if not message.strip():
@@ -157,43 +147,38 @@ class GlodTUIEditor:
                 for role, content in self.messages[:-1]  # Exclude the current message
             ])
             
-            # Create a Live display for streaming updates
-            live = Live(self.console)
+            # Create initial renderable for Live display
+            initial_renderable = self._render_live_display()
             
-            async def update_display():
-                """Update display in a loop while streaming"""
-                while self.is_processing:
-                    # Render current state
-                    display_content = self._render_live_display()
-                    live.update(display_content, refresh=True)
-                    await asyncio.sleep(0.05)  # Update every 50ms
-            
-            # Start display update task
-            update_task = asyncio.create_task(update_display())
-            
-            try:
-                # Stream response
-                async for chunk in self.agent_client.stream_run(
-                    prompt=message,
-                    message_history=history_text
-                ):
-                    self.streaming_response += chunk
-                
-                # Add final response to messages
-                if self.streaming_response:
-                    self.messages.append(("agent", self.streaming_response))
-            
-            finally:
-                # Stop the display update task
-                self.is_processing = False
-                update_task.cancel()
+            # Use Live context manager for streaming updates
+            with Live(initial_renderable, console=self.console, refresh_per_second=20) as live:
                 try:
-                    await update_task
-                except asyncio.CancelledError:
-                    pass
-                live.stop()
+                    # Stream response
+                    async for chunk in self.agent_client.stream_run(
+                        prompt=message,
+                        message_history=history_text
+                    ):
+                        self.streaming_response += chunk
+                        # Update display with streaming response
+                        display_content = self._render_live_display()
+                        live.update(display_content)
+                    
+                    # Add final response to messages
+                    if self.streaming_response:
+                        self.messages.append(("agent", self.streaming_response))
+                
+                finally:
+                    # Stop processing
+                    self.is_processing = False
+                    self.streaming_response = ""
         
         except Exception as e:
+            self.messages.append(("agent", f"[red]Error:[/red] {str(e)}"))
+        
+        finally:
+            self.is_processing = False
+            self.streaming_response = ""
+
             self.messages.append(("agent", f"[red]Error:[/red] {str(e)}"))
         
         finally:

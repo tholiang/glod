@@ -71,7 +71,7 @@ async def editor_run_stream(prompt: str, message_history: List[ModelMessage]) ->
     - Switch agents while maintaining client session
     - Persist history independently on client side
     """
-    model = AnthropicModel('claude-haiku-4-5')
+    model = AnthropicModel('claude-sonnet-4-5')
     agent = Agent(
         model,
         system_prompt=_sys_prompt_with_dirs(),

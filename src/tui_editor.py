@@ -182,13 +182,13 @@ class GlodTUIEditor:
             return self.input_buffer
         return "[dim]Type your message here...[/dim]"
     
-    def _render_status(self) -> str:
+    def _render_status(self) -> Panel:
         """Render status bar"""
         server_status = "🟢 Server Running" if self.server_manager.is_running() else "🔴 Server Offline"
         allowed_dirs_text = f"Allowed dirs: {len(self.allowed_dirs)}"
         return Panel(f"{server_status} | {allowed_dirs_text}", style="dim", padding=(0, 1))
     
-    def _render_footer(self) -> str:
+    def _render_footer(self) -> Panel:
         """Render footer with help text"""
         return Panel(
             "[dim]/help for commands • Ctrl+C to exit[/dim]",

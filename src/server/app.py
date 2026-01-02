@@ -33,6 +33,3 @@ def set_app(app: App) -> None:
     global _app_instance
     _app_instance = app
 
-    global _app_instance
-    _app_instance = app
-

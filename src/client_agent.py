@@ -31,44 +31,10 @@ class AgentClient:
     - Streaming: run_stream() - yields chunks as they arrive
     """
     
-    def __init__(self, base_url: str = "http://127.0.0.1:8000", allowed_dirs_file: Path | None = None):
+    def __init__(self, base_url: str = "http://127.0.0.1:8000"):
         self.base_url = base_url
         self.client = httpx.AsyncClient(timeout=300.0)
         self.message_history = "" # encoded json
-        
-        # Allowed directories file
-        self.allowed_dirs_file = allowed_dirs_file or Path.home() / ".glod_allowed_dirs"
-        self.allowed_dirs = self._load_allowed_dirs()
-    
-    def _load_allowed_dirs(self) -> list[str]:
-        """Load allowed directories from disk"""
-        if self.allowed_dirs_file.exists():
-            try:
-                with open(self.allowed_dirs_file, 'r') as f:
-                    data = json.load(f)
-                    dirs = data.get("allowed_dirs", [])
-                    # Filter out non-existent paths
-                    valid_dirs = [d for d in dirs if Path(d).exists()]
-                    # Update file if we removed any
-                    if len(valid_dirs) < len(dirs):
-                        self._save_allowed_dirs(valid_dirs)
-                    return valid_dirs
-            except Exception as e:
-                print(f"Warning: Could not load allowed directories: {e}", file=sys.stderr)
-                return []
-        return []
-    
-    def _save_allowed_dirs(self, dirs: list[str] | None = None) -> None:
-        """Save allowed directories to disk"""
-        if dirs is None:
-            dirs = self.allowed_dirs
-        try:
-            self.allowed_dirs_file.parent.mkdir(parents=True, exist_ok=True)
-            data = {"allowed_dirs": dirs}
-            with open(self.allowed_dirs_file, 'w') as f:
-                json.dump(data, f, indent=2)
-        except Exception as e:
-            print(f"Warning: Could not save allowed directories: {e}", file=sys.stderr)
     
     async def health_check(self) -> bool:
         """Check if the agent server is running"""
@@ -78,11 +44,6 @@ class AgentClient:
         except Exception as e:
             print(f"[Agent] Health check failed: {e}", file=sys.stderr)
             return False
-    
-    async def sync_allowed_dirs(self) -> None:
-        """Resend all allowed directories to the server"""
-        for dir_path in self.allowed_dirs:
-            await self.add_allowed_dir(dir_path)
 
     def clear_history(self):
         """Clear the message history"""
@@ -195,33 +156,6 @@ class AgentClient:
         try:
             response = await self.client.post(
                 f"{self.base_url}/add-allowed-dir",
-                json={"path": dir_path}
-            )
-            
-            if response.status_code != 200:
-                return {
-                    "status": "error",
-                    "message": f"Server returned {response.status_code}: {response.text}"
-                }
-            
-            # Add to local list if successful and not already there
-            if dir_path not in self.allowed_dirs:
-                self.allowed_dirs.append(dir_path)
-                self._save_allowed_dirs()
-            
-            return response.json()
-        
-        except httpx.ConnectError:
-            return {
-                "status": "error",
-                "message": "Could not connect to agent server"
-            }
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": str(e)
-            }
-
                 json={"path": dir_path}
             )
             

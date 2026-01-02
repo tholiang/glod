@@ -6,16 +6,7 @@ import shutil
 from datetime import datetime
 from pydantic_ai import Tool
 
-from server.app import get_app
-
-def _check_access(filepath: str) -> bool:
-    """Check if the app allows access to this filepath"""
-    app = get_app()
-    try:
-        path = Path(filepath).resolve()
-        return app.can_access(path)
-    except Exception:
-        return False
+from server.tools.util import _check_access
 
 def list_files(filepath: str, recursive: bool = False) -> List[str]:
     """
@@ -98,6 +89,22 @@ def grep(filepath: str, pattern: str, flags: List[str] = []) -> str:
             return f"error: grep failed with code {result.returncode}: {result.stderr}"
     except Exception as e:
         return f"error: {e}"
+    
+def mkdir(filepath: str) -> str:
+    """
+    Create a new empty directory
+    
+    Returns:
+        Success message, or error message
+    """
+    if not _check_access(filepath):
+        return "error: access denied to this path"
+    
+    try:
+        subprocess.run(['mkdir', filepath], check=True)
+        return f"success: directory created: {filepath}"
+    except Exception as e:
+        return f"error: {e}"
 
 def touch(filepath: str) -> str:
     """
@@ -112,6 +119,24 @@ def touch(filepath: str) -> str:
     try:
         subprocess.run(['touch', filepath], check=True)
         return f"success: file created or updated: {filepath}"
+    except Exception as e:
+        return f"error: {e}"
+
+def mv(source: str, dest: str) -> str:
+    """
+    Move a file to a new location
+    
+    Returns:
+        Success message, or error message
+    """
+    if not _check_access(source):
+        return f"error: access denied to this path {source}"
+    if not _check_access(dest):
+        return f"error: access denied to this path {dest}"
+    
+    try:
+        subprocess.run(['mv', source, dest], check=True)
+        return f"success: file {source} moved to {dest}"
     except Exception as e:
         return f"error: {e}"
 
@@ -235,4 +260,6 @@ def get_pydantic_tools() -> List[Tool]:
         Tool(delete, takes_ctx=False),
         Tool(rm, takes_ctx=False),
         Tool(insert, takes_ctx=False),
+        Tool(mkdir, takes_ctx=False),
+        Tool(mv, takes_ctx=False)
     ]

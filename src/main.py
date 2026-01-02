@@ -22,7 +22,7 @@ from server_manager import ServerManager
 
 # Global server manager instance
 server_manager = ServerManager(project_root=Path(__file__).parent.parent)
-
+allowed_dirs = []
 
 async def _entry(prompt: str, agent_client: AgentClient, stream: bool = True) -> None:
     """
@@ -98,6 +98,11 @@ async def _handle_allow_dir_command(dir_path: str, agent_client: AgentClient) ->
     except Exception as e:
         print(f"❌ Failed to add allowed directory: {str(e)}")
 
+async def _sync_allowed_dirs(agent_client: AgentClient) -> None:
+    global allowed_dirs
+    for dir in allowed_dirs:
+        await _handle_allow_dir_command(dir, agent_client)
+
 async def _handle_server_command(subcommand: str | None, agent_client: AgentClient) -> None:
     """Handle /server commands"""
     if subcommand is None:
@@ -110,14 +115,13 @@ async def _handle_server_command(subcommand: str | None, agent_client: AgentClie
         server_manager.start()
         # Resync allowed directories after start
         await asyncio.sleep(1)
-        await agent_client.sync_allowed_dirs()
     elif subcommand == "stop":
         server_manager.stop()
     elif subcommand == "restart":
         server_manager.restart()
         # Resync allowed directories after restart
         await asyncio.sleep(1)
-        await agent_client.sync_allowed_dirs()
+        await _sync_allowed_dirs(agent_client)
     elif subcommand == "status":
         if server_manager.is_running():
             print(f"✅ Agent server is running (PID: {server_manager.get_pid()})")
@@ -131,6 +135,9 @@ async def _handle_server_command(subcommand: str | None, agent_client: AgentClie
 async def _run():
     # Initialize client and agent client
     agent_client = AgentClient()
+
+    global allowed_dirs
+    allowed_dirs = [os.getcwd()]
     
     # Check if agent server is running
     if not await agent_client.health_check():
@@ -147,14 +154,11 @@ async def _run():
         if not await agent_client.health_check():
             print("❌ Agent server failed to respond after starting. Please check the server logs.")
             return
-        
-        # Sync allowed directories after server starts
-        await agent_client.sync_allowed_dirs()
     else:
         print("✅ Agent server running!")
     
     print("✅ Connected to agent server!")
-    await _handle_allow_dir_command(os.getcwd(), agent_client)
+    await _sync_allowed_dirs(agent_client)
     print("Type /help for commands.\n")
     
     try:
@@ -163,29 +167,6 @@ async def _run():
             if prompt.startswith("/"):
                 if await _command(prompt, agent_client) == 1:
                     break
-                continue
-
-            # Run agent and display response
-            await _entry(prompt, agent_client, stream=True)
-    except KeyboardInterrupt:
-        print("\n\nExiting...")
-        return
-    except EOFError:
-        print("\nExiting...")
-        return
-
-
-def _run_sync():
-    """Wrapper to run async code from sync context"""
-    asyncio.run(_run())
-
-
-if __name__ == "__main__":
-
-    _run_sync()
-    _exit()
-
-
                 continue
 
             # Run agent and display response

@@ -4,11 +4,16 @@ from typing import List, AsyncGenerator
 from pydantic_ai import Agent, AgentRunResultEvent, FunctionToolCallEvent, FunctionToolResultEvent, PartDeltaEvent, PartEndEvent, PartStartEvent, RetryPromptPart, TextPart, TextPartDelta, ToolCallPart, BuiltinToolCallPart, BuiltinToolReturnPart, ThinkingPart, FilePart, ToolReturnPart, ModelMessage
 from pydantic_ai.models.anthropic import AnthropicModel
 
-from server.tools import files
+from server.tools import files, git
 from server.app import get_app
 
 _DEFAULT_SYS_PROMPT = f"""
-You are a basic coding assistant. Use the provided tools to edit files based on user instruction
+You are a basic coding assistant. Use the provided tools to edit files based on user instruction.
+Be minimal with the documentation files you create. Only create documentation that actually explains how some component works.
+Do not make checklists or progress reports. Keep doc files to a single file per component
+Use the `get_project_overview` tool to gain context about the project
+
+You also have access to git tools for version control operations.
 """
 
 def _sys_prompt_with_dirs() -> str:
@@ -19,6 +24,10 @@ def _sys_prompt_with_dirs() -> str:
 {_DEFAULT_SYS_PROMPT}
 allowed directories:{'\n'.join(dirs)}
 """
+
+def _get_all_tools() -> List:
+    """Get all available tools: file operations and git operations"""
+    return files.get_pydantic_tools() + git.get_pydantic_git_tools()
     
 async def editor_run(prompt: str, message_history: List[ModelMessage]) -> str:
     """Run agent with provided message history (stateless)"""
@@ -26,7 +35,7 @@ async def editor_run(prompt: str, message_history: List[ModelMessage]) -> str:
     agent = Agent(
         model,
         system_prompt=_sys_prompt_with_dirs(),
-        tools=files.get_pydantic_tools()
+        tools=_get_all_tools()
     )
     result = await agent.run(prompt, message_history=message_history)
     message_history.extend(result.new_messages())
@@ -48,7 +57,7 @@ async def editor_run_stream(prompt: str, message_history: List[ModelMessage]) ->
     agent = Agent(
         model,
         system_prompt=_sys_prompt_with_dirs(),
-        tools=files.get_pydantic_tools()
+        tools=_get_all_tools()
     )
     
     async for event in agent.run_stream_events(prompt, message_history=message_history):

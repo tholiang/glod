@@ -33,6 +33,18 @@ from client_lib import (
     get_console,
 )
 
+try:
+    import tty
+    import termios
+except ImportError:
+    tty = None
+    termios = None
+
+    print_error,
+    print_info,
+    get_console,
+)
+
 
 class GlodTUIEditor:
     """Fullscreen TUI editor for GLOD"""
@@ -51,10 +63,15 @@ class GlodTUIEditor:
         # Message history: list of (role, content) tuples
         # role: "user" or "agent"
         self.messages: list[tuple[str, str]] = []
-        self.input_lines: list[str] = []
+        self.input_buffer: str = ""  # Current input being typed
         self.is_processing = False
         self.exit_requested = False
-        
+
+        """Main TUI loop"""
+        try:
+            # Clear screen and show welcome
+            self.console.clear()
+            self.console.print(Panel("🔮 [bold cyan]GLOD AI Editor[/bold cyan] - Fullscreen Mode", style="cyan", padding=(0, 1)))
     async def run(self) -> None:
         """Main TUI loop"""
         try:
@@ -66,43 +83,36 @@ class GlodTUIEditor:
             # Create layout
             layout = self._create_layout()
             
-            with Live(layout, refresh_per_second=2, screen=True) as live:
+            with Live(layout, refresh_per_second=4, screen=True) as live:
                 while not self.exit_requested:
                     # Update layout
                     self._update_layout(layout)
+                    live.update(layout)
                     
-                    # Get user input (non-blocking in TUI context)
-                    user_input = await self._get_input()
-                    
-                    if user_input is None:  # Exit signal
+                    # Get user input (non-blocking)
+                    try:
+                        user_input = await asyncio.wait_for(
+                            self._get_input_async(), 
+                            timeout=0.25
+                        )
+                        
+                        if user_input is not None:
+                            if user_input.startswith("/"):
+                                await self._handle_command(user_input)
+                            else:
+                                await self._send_message(user_input)
+                            self.input_buffer = ""
+                    except asyncio.TimeoutError:
+                        # No input available, keep updating display
+                        pass
+                    except EOFError:
                         break
-                    
-                    if user_input.strip():
-                        if user_input.startswith("/"):
-                            await self._handle_command(user_input)
-                        else:
-                            await self._send_message(user_input)
-                    
-                    self.input_lines = []
         
         except KeyboardInterrupt:
             pass
         finally:
             self.console.clear()
-    
-    def _create_layout(self) -> Layout:
-        """Create the TUI layout"""
-        layout = Layout()
-        layout.split_column(
-            Layout(name="header", size=3),
-            Layout(name="messages", ratio=1),
-            Layout(name="status", size=1),
-            Layout(name="input", size=7),
-            Layout(name="footer", size=1),
-        )
-        return layout
-    
-    def _update_layout(self, layout: Layout) -> None:
+
         """Update layout with current state"""
         # Header
         header_text = "🔮 [bold cyan]GLOD AI Editor[/bold cyan]"
@@ -147,14 +157,12 @@ class GlodTUIEditor:
                 if len(content_lines) > 3:
                     lines.append(f"    [dim]... ({len(content_lines) - 3} more lines)[/dim]")
             else:
-                # Agent response - show first few lines
-                content_lines = content.split("\n")
-                for i, line in enumerate(content_lines[:5]):  # Show first 5 lines
-                    if i == 0:
-                        lines.append(f"[bold cyan]Agent:[/bold cyan] {line[:80]}")
-                    else:
-                        lines.append(f"    {line[:80]}")
-                if len(content_lines) > 5:
+    def _render_input(self) -> str:
+        """Render input area"""
+        if self.input_buffer:
+            return self.input_buffer
+        return "[dim]Type your message here...[/dim]"
+
                     lines.append(f"    [dim]... ({len(content_lines) - 5} more lines)[/dim]")
             lines.append("")  # Blank line between messages
         
@@ -164,60 +172,58 @@ class GlodTUIEditor:
         """Render status bar"""
         server_status = "🟢 Server Running" if self.server_manager.is_running() else "🔴 Server Offline"
         allowed_dirs_text = f"Allowed dirs: {len(self.allowed_dirs)}"
-        return f"[dim]{server_status} | {allowed_dirs_text}[/dim]"
-    
-    def _render_input(self) -> str:
-        """Render input area"""
-        if self.input_lines:
-            return "\n".join(self.input_lines)
-        return "[dim]Type your message here...[/dim]"
-    
-    def _render_footer(self) -> str:
-        """Render footer"""
-        return "[dim]Type /help for commands | Ctrl+C to exit[/dim]"
-    
-    async def _get_input(self) -> Optional[str]:
-        """Get user input (reads until EOF or complete message)"""
+    async def _get_input_async(self) -> Optional[str]:
+        """Get user input asynchronously using non-blocking stdin"""
+        loop = asyncio.get_event_loop()
+        
+        # Read a single line of input
         try:
-            # Use a simple prompt that doesn't interfere with Live display
-            loop = asyncio.get_event_loop()
+            char = await loop.run_in_executor(None, self._read_char_nonblocking)
             
-            # Read line by line until we get an empty line or EOF
-            # This is simplified - just get one line at a time for now
-            line = await loop.run_in_executor(
-                None,
-                lambda: self._read_line_safe()
-            )
-            
-            if line is None:
+            if char is None:
                 return None
             
-            # If it's a command, return immediately
-            if line.startswith("/"):
-                return line
+            if char == '\n':
+                # User pressed enter - return the current buffer
+                result = self.input_buffer
+                self.input_buffer = ""
+                return result if result else None
+            elif char == '\x04':  # Ctrl+D
+                # EOF/exit signal
+                raise EOFError()
+            elif char == '\x08' or char == '\x7f':  # Backspace
+                # Delete last character
+                if self.input_buffer:
+                    self.input_buffer = self.input_buffer[:-1]
+            elif char == '\x03':  # Ctrl+C
+                raise KeyboardInterrupt()
+            elif char.isprintable() or char == '\t':
+                # Add to input buffer
+                self.input_buffer += char
             
-            # Otherwise, add to input buffer and wait for more
-            self.input_lines.append(line)
-            
-            # For multi-line input, keep reading until empty line
-            # or just return after each line for now
-            if self.input_lines:
-                return "\n".join(self.input_lines)
+            return None  # Still building input
+        except (EOFError, KeyboardInterrupt):
+            raise
+    
+    def _read_char_nonblocking(self) -> Optional[str]:
+        """Read a single character without blocking"""
+        import select
+        import sys
+        
+        # Check if input is available
+        if select.select([sys.stdin], [], [], 0)[0]:
+            try:
+                return sys.stdin.read(1)
+            except:
+                return None
+        return None
+
             
             return None
         
         except EOFError:
             return None
     
-    def _read_line_safe(self) -> Optional[str]:
-        """Safely read a line from stdin without interfering with Live display"""
-        try:
-            # Simple non-blocking read
-            return input()
-        except EOFError:
-            return None
-        except KeyboardInterrupt:
-            raise
     
     async def _send_message(self, prompt: str) -> None:
         """Send a message to the agent"""

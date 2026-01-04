@@ -1,32 +1,23 @@
 """
-GLOD CLI - Beautiful AI Code Editor Interface
+GLOD - AI Code Editor
 
-Entrypoint for the CLI application. Delegates to client_lib for core logic.
+Entrypoint for the GLOD CLI application.
 """
-import os
 import asyncio
-from pathlib import Path
-
-from client_lib import ClientSession, get_console
-
-
-console = get_console()
+from cli import CLI
 
 
 def main():
     """Main entrypoint for the GLOD CLI"""
     try:
-        asyncio.run(_run_interactive())
+        cli = CLI()
+        asyncio.run(cli.run_interactive())
     except KeyboardInterrupt:
         pass
 
 
-async def _run_interactive():
-    """Initialize session and run interactive loop"""
-    session = ClientSession(project_root=Path(os.getcwd()))
-    await session.run_interactive()
-
-
 if __name__ == "__main__":
+    main()
+
     main()
 

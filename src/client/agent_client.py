@@ -1,13 +1,11 @@
 """
-HTTP Client for Agent Server.
+HTTP Client for Agent Server - Pure business logic, no output handling.
 
 Connects to a running agent server via HTTP and provides a clean interface.
 Supports both regular and streaming responses.
 
-The client maintains a persistent list of allowed directories that it sends
-to the server on each restart.
-
-Events are categorized as:
+Event callbacks allow callers to handle output presentation.
+Events are returned as StreamEvent objects with types:
 - TOOL_CALL: Agent is calling a tool
 - TOOL_RESULT: Result from a tool
 - CHUNK: Final response text from agent
@@ -17,11 +15,31 @@ Events are categorized as:
 import asyncio
 import httpx
 import json
-import sys
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Optional
 
-from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter
+
+class EventType(str, Enum):
+    """Types of events that can occur during agent communication"""
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
+    CHUNK = "chunk"
+    COMPLETE = "complete"
+    ERROR = "error"
+    TOOL_PHASE_START = "tool_phase_start"  # Emitted by client when tool phase begins
+    TOOL_PHASE_END = "tool_phase_end"      # Emitted by client when tool phase ends
+
+
+@dataclass
+class StreamEvent:
+    """Represents a single event in the response stream"""
+    type: EventType
+    content: str = ""
+    
+    def __repr__(self) -> str:
+        return f"StreamEvent(type={self.type}, content={self.content!r})"
 
 
 class AgentClient:
@@ -31,52 +49,43 @@ class AgentClient:
     The agent server runs separately and keeps no state.
     This client maintains the message history and allowed directories.
     
-    Allowed directories are persisted to disk and re-sent to the server
-    on reconnection.
-    
     Supports both:
-    - Non-streaming: run() - waits for complete response
-    - Streaming: run_stream() - yields chunks as they arrive
+    - Non-streaming: run() - returns complete response text
+    - Streaming: run_stream() - yields StreamEvent objects as they arrive
     
-    Event callbacks can be registered for custom handling of:
-    - Tool calls and results
-    - Response chunks
-    - Completion and errors
+    Callers must handle event routing/presentation themselves.
+    No print statements or Rich output in this class.
     """
     
     def __init__(self, base_url: str = "http://127.0.0.1:8000"):
         self.base_url = base_url
         self.client = httpx.AsyncClient(timeout=300.0)
-        self.message_history = "" # encoded json
-        
-        # Event callbacks
-        self.on_tool_call: Optional[Callable[[str], None]] = None
-        self.on_tool_result: Optional[Callable[[str], None]] = None
-        self.on_chunk: Optional[Callable[[str], None]] = None
-        self.on_tool_phase_start: Optional[Callable[[], None]] = None
-        self.on_tool_phase_end: Optional[Callable[[], None]] = None
+        self.message_history = ""  # encoded json
     
     async def health_check(self) -> bool:
         """Check if the agent server is running"""
         try:
             response = await self.client.get(f"{self.base_url}/health")
             return response.status_code == 200
-        except Exception as e:
-            print(f"[Agent] Health check failed: {e}", file=sys.stderr)
+        except Exception:
             return False
 
     def clear_history(self):
         """Clear the message history"""
         self.message_history = ""
     
-    async def run(self, prompt: str) -> None:
+    async def run(self, prompt: str) -> str:
         """
         Send a prompt to the agent server and wait for complete response.
         
         Args:
             prompt: The user's prompt
         
-        Outputs the response directly to stdout and updates message history.
+        Returns:
+            The complete response text from the agent
+        
+        Raises:
+            Exception: If communication with server fails
         """
         try:
             response = await self.client.post(
@@ -88,19 +97,19 @@ class AgentClient:
             )
             
             if response.status_code != 200:
-                print(f"error: server returned {response.status_code} {response.text}")
-                return
+                raise Exception(f"Server returned {response.status_code}: {response.text}")
             
             data = response.json()
-            print(data.get("output", ""))
+            output = data.get("output", "")
             self.message_history = data.get("message_history", "")
+            return output
         
-        except httpx.ConnectError:
-            print(f"error: could not connect to agent server")
+        except httpx.ConnectError as e:
+            raise Exception("Could not connect to agent server") from e
         except Exception as e:
-            print(f"error: error communicating with agent: {e}")
+            raise Exception(f"Error communicating with agent: {e}") from e
 
-    async def run_stream(self, prompt: str) -> None:
+    async def run_stream(self, prompt: str) -> AsyncGenerator[StreamEvent, None]:
         """
         Send a prompt to the agent server with streaming response.
         
@@ -109,8 +118,11 @@ class AgentClient:
         Args:
             prompt: The user's prompt
         
-        Outputs chunks directly to stdout and updates message history at the end.
-        Calls registered event callbacks for tool calls, results, and response chunks.
+        Yields:
+            StreamEvent objects representing tool calls, results, response chunks, etc.
+        
+        Raises:
+            Exception: If communication with server fails
         """
         try:
             async with self.client.stream(
@@ -123,7 +135,10 @@ class AgentClient:
             ) as response:
                 
                 if response.status_code != 200:
-                    print(f"error: server returned {response.status_code}")
+                    yield StreamEvent(
+                        type=EventType.ERROR,
+                        content=f"Server returned {response.status_code}"
+                    )
                     return
                 
                 # Track if we're currently in a tool phase
@@ -144,61 +159,53 @@ class AgentClient:
                                 # Mark start of tool phase if not already
                                 if not in_tool_phase:
                                     in_tool_phase = True
-                                    if self.on_tool_phase_start:
-                                        self.on_tool_phase_start()
+                                    yield StreamEvent(type=EventType.TOOL_PHASE_START)
                                 
-                                # Call tool call handler
-                                if self.on_tool_call:
-                                    self.on_tool_call(content)
-                                else:
-                                    print(content, end="", flush=True)
+                                yield StreamEvent(type=EventType.TOOL_CALL, content=content)
                             
                             elif event_type == "tool_result":
-                                # Call tool result handler
-                                if self.on_tool_result:
-                                    self.on_tool_result(content)
-                                else:
-                                    print(content, end="", flush=True)
+                                yield StreamEvent(type=EventType.TOOL_RESULT, content=content)
                             
                             elif event_type == "chunk":
                                 # Mark end of tool phase when we get actual response chunks
                                 if in_tool_phase:
                                     in_tool_phase = False
-                                    if self.on_tool_phase_end:
-                                        self.on_tool_phase_end()
+                                    yield StreamEvent(type=EventType.TOOL_PHASE_END)
                                 
-                                # Output response chunks
-                                if self.on_chunk:
-                                    self.on_chunk(content)
-                                else:
-                                    print(content, end="", flush=True)
+                                yield StreamEvent(type=EventType.CHUNK, content=content)
                             
                             elif event_type == "complete":
                                 # End tool phase if still active
                                 if in_tool_phase:
                                     in_tool_phase = False
-                                    if self.on_tool_phase_end:
-                                        self.on_tool_phase_end()
+                                    yield StreamEvent(type=EventType.TOOL_PHASE_END)
                                 
                                 self.message_history = content
-                                print()  # Final newline
+                                yield StreamEvent(type=EventType.COMPLETE, content=content)
                             
                             elif event_type == "error":
-                                print(f"\nerror: {content}", file=sys.stderr)
+                                yield StreamEvent(type=EventType.ERROR, content=content)
                         
                         except json.JSONDecodeError as e:
-                            print(f"error: failed to parse event: {e}", file=sys.stderr)
+                            yield StreamEvent(
+                                type=EventType.ERROR,
+                                content=f"Failed to parse event: {e}"
+                            )
 
         except httpx.ConnectError:
-            print(f"error: could not connect to agent server")
+            yield StreamEvent(
+                type=EventType.ERROR,
+                content="Could not connect to agent server"
+            )
         except Exception as e:
-            print(f"error: error communicating with agent: {e}")
-
+            yield StreamEvent(
+                type=EventType.ERROR,
+                content=f"Error communicating with agent: {e}"
+            )
 
     async def add_allowed_dir(self, dir_path: str) -> dict[str, Any]:
         """
         Add a directory to the allowed paths on the agent server.
-        Also persists it locally so it survives server restarts.
         
         Args:
             dir_path: The directory path to allow
@@ -230,3 +237,4 @@ class AgentClient:
                 "status": "error",
                 "message": str(e)
             }
+

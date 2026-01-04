@@ -9,8 +9,7 @@ Provides analysis capabilities:
 """
 import ast
 import json
-from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Optional
 
 from pydantic_ai import Tool
 
@@ -125,7 +124,7 @@ class CodeAnalyzer(ast.NodeVisitor):
         
         self.generic_visit(node)
     
-    def _get_function_signature(self, node: ast.FunctionDef) -> str:
+    def _get_function_signature(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
         """Extract function signature with parameters and return type"""
         try:
             # Use ast.unparse if available (Python 3.9+)
@@ -158,7 +157,7 @@ class CodeAnalyzer(ast.NodeVisitor):
         except Exception:
             return f"def {node.name}(...)"
     
-    def _extract_type_hints(self, node: ast.FunctionDef) -> Dict[str, str]:
+    def _extract_type_hints(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> Dict[str, str]:
         """Extract type hints from function arguments and return type"""
         hints = {}
         

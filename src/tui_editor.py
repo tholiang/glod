@@ -1,23 +1,21 @@
 """
-
 GLOD Simple CLI Editor
 
 Provides a simple text-based interface for GLOD using Rich.
 
 Features:
-
 - Sequential output (no panels or layouts)
-
 - Real-time response streaming
-
 - Command palette with /help, /clear, /allow, /server commands
 """
 import asyncio
 from pathlib import Path
 
-from rich.console import Console
+from prompt_toolkit import PromptSession
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
 
-from client import ClientSession, StreamEvent, EventType
+from client import ClientSession, EventType
 
 from util import get_console
 
@@ -31,6 +29,20 @@ class GlodTUIEditor:
         self.messages: list[tuple[str, str]] = []
         self.is_processing = False
         self.exit_requested = False
+        
+        self.prompt_session = PromptSession()
+        self.kb = self._create_keybindings()
+    
+    def _create_keybindings(self) -> KeyBindings:
+        """Create key bindings for the prompt"""
+        kb = KeyBindings()
+        
+        @kb.add(Keys.ControlJ)  # Ctrl+J for newline
+        def _(event):
+            """Insert newline on Shift+Enter"""
+            event.current_buffer.insert_text('\n')
+        
+        return kb
 
     async def run(self) -> None:
         """Main CLI loop"""
@@ -42,11 +54,14 @@ class GlodTUIEditor:
             
             # Show welcome
             self.console.print("[cyan]🔮 GLOD AI Editor[/cyan] - Ready for input\n")
-            
             while not self.exit_requested:
                 try:
-                    user_input = self.console.input("[bold green]You:[/bold green] ").strip()
-                    
+                    user_input = (await self.prompt_session.prompt_async(
+                        "You: ",
+                        multiline=False,
+                        key_bindings=self.kb
+                    )).strip()
+
                     if not user_input:
                         continue
                     
@@ -63,9 +78,7 @@ class GlodTUIEditor:
         
         except Exception as e:
             self.console.print(f"[red]Error: {str(e)}[/red]")
-        finally:
-            pass
-
+    
     async def _send_message(self, message: str) -> None:
         """Send a message to the agent with streaming updates"""
         if not message.strip():
@@ -193,21 +206,21 @@ class GlodTUIEditor:
         elif subcommand == "status":
             await self._show_status()
         
-         else:
-             self.console.print(f"[red]Unknown server command:[/red] {subcommand}\n")
-     
-     async def _show_status(self) -> None:
-         """Display server and session status"""
-         server_status = "🟢 Running" if self.session.is_server_running() else "🔴 Offline"
-         pid = self.session.get_server_pid() if self.session.is_server_running() else None
-         
-         self.console.print(f"[cyan]Server:[/cyan] {server_status}" + (f" (PID: {pid})" if pid else "") + "\n")
-         self.console.print(f"[cyan]Allowed directories:[/cyan] {len(self.session.allowed_dirs)}\n")
-         self.console.print(f"[cyan]Messages in history:[/cyan] {len(self.messages)}\n")
-     
-     async def _show_help(self) -> None:
-         """Display help"""
-         help_text = """[bold cyan]Available Commands:[/bold cyan]
+        else:
+            self.console.print(f"[red]Unknown server command:[/red] {subcommand}\n")
+    
+    async def _show_status(self) -> None:
+        """Display server and session status"""
+        server_status = "🟢 Running" if self.session.is_server_running() else "🔴 Offline"
+        pid = self.session.get_server_pid() if self.session.is_server_running() else None
+        
+        self.console.print(f"[cyan]Server:[/cyan] {server_status}" + (f" (PID: {pid})" if pid else "") + "\n")
+        self.console.print(f"[cyan]Allowed directories:[/cyan] {len(self.session.allowed_dirs)}\n")
+        self.console.print(f"[cyan]Messages in history:[/cyan] {len(self.messages)}\n")
+    
+    async def _show_help(self) -> None:
+        """Display help"""
+        help_text = """[bold cyan]Available Commands:[/bold cyan]
 
 [yellow]/allow <path>[/yellow]        Add a directory to allowed file access paths
 [yellow]/clear[/yellow]              Clear message history
@@ -219,6 +232,4 @@ class GlodTUIEditor:
 [yellow]/help[/yellow]               Show this help message
 [yellow]/exit[/yellow]               Exit GLOD
 """
-         self.console.print(help_text)
-
-        
+        self.console.print(help_text + "\n")

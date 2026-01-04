@@ -37,16 +37,17 @@ def list_files(filepath: str, recursive: bool = False) -> List[str]:
     except Exception as e:
         return [f"error: {e}"]
 
-def read(filepath: str, max_lines: int = 1000) -> str:
+def read(filepath: str, start_line: int = 1, end_line: int = 1000) -> str:
     """
-    Read a full file. Not recommended for very large files. Prefer `grep` for searching.
+    Read a file
     
     Args:
         filepath: Path to the file to read
-        max_lines: Maximum number of lines to read (default 1000)
+        start_line: first line to read (1-indexed, default 1)
+        end_line: last line to read (1-indexed, default 1000)
     
     Returns:
-        File contents, or error message if file is too large
+        File contents prefixed with line numbers ("1: "), or error message if file is too large
     """
     if not _check_access(filepath):
         return "error: access denied to this path"
@@ -54,9 +55,10 @@ def read(filepath: str, max_lines: int = 1000) -> str:
     try:
         with open(filepath, 'r') as file:
             lines = file.readlines()
-            if len(lines) > max_lines:
-                return f"error: file has {len(lines)} lines, exceeds limit of {max_lines}. Use grep to search specific patterns instead."
-            return ''.join(lines)
+            ret = []
+            for i in range(start_line-1, min(end_line-1, len(lines))):
+                ret.append(f"{i}: {lines[i]}")
+            return '\n'.join(ret)
     except Exception as e:
         return f"error: {e}"
 
@@ -275,14 +277,14 @@ def replace(filepath: str, start_line: int, end_line: int, text: str) -> str:
 
 def get_pydantic_tools() -> List[Tool]:
     return [
-        Tool(list_files, takes_ctx=False),
-        Tool(read, takes_ctx=False),
-        Tool(grep, takes_ctx=False),
-        Tool(touch, takes_ctx=False),
-        Tool(delete, takes_ctx=False),
-        Tool(rm, takes_ctx=False),
-        Tool(insert, takes_ctx=False),
-        Tool(replace, takes_ctx=False),
-        Tool(mkdir, takes_ctx=False),
-        Tool(mv, takes_ctx=False)
+        Tool(list_files, takes_ctx=False, max_retries=3),
+        Tool(read, takes_ctx=False, max_retries=3),
+        Tool(grep, takes_ctx=False, max_retries=3),
+        Tool(touch, takes_ctx=False, max_retries=3),
+        Tool(delete, takes_ctx=False, max_retries=3),
+        Tool(rm, takes_ctx=False, max_retries=3),
+        Tool(insert, takes_ctx=False, max_retries=3),
+        Tool(replace, takes_ctx=False, max_retries=3),
+        Tool(mkdir, takes_ctx=False, max_retries=3),
+        Tool(mv, takes_ctx=False, max_retries=3)
     ]

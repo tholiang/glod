@@ -77,7 +77,7 @@ async def editor_run_stream(prompt: str, message_history: List[ModelMessage]) ->
         system_prompt=_sys_prompt_with_dirs(),
         tools=_get_all_tools()
     )
-    usage_limits = UsageLimits(request_limit=200)
+    usage_limits = UsageLimits(request_limit=None)
     
     async for event in agent.run_stream_events(prompt, message_history=message_history, usage_limits=usage_limits):
         if isinstance(event, PartStartEvent):

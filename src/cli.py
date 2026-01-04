@@ -217,7 +217,7 @@ class CLI:
         
         return 0
     
-    async def run_interactive(self) -> None:
+    async def run(self) -> None:
         """Run the main interactive loop"""
         print_welcome()
         console.print()

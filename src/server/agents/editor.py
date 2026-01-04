@@ -1,7 +1,7 @@
 import os
 from typing import List, AsyncGenerator
 
-from pydantic_ai import Agent, AgentRunResultEvent, FunctionToolCallEvent, FunctionToolResultEvent, PartDeltaEvent, PartEndEvent, PartStartEvent, RetryPromptPart, TextPart, TextPartDelta, ToolCallPart, BuiltinToolCallPart, BuiltinToolReturnPart, ThinkingPart, FilePart, ToolReturnPart, ModelMessage
+from pydantic_ai import Agent, AgentRunResultEvent, FunctionToolCallEvent, FunctionToolResultEvent, PartDeltaEvent, PartEndEvent, PartStartEvent, RetryPromptPart, TextPart, TextPartDelta, ToolCallPart, BuiltinToolCallPart, BuiltinToolReturnPart, ThinkingPart, FilePart, ToolReturnPart, ModelMessage, UsageLimits
 from pydantic_ai.models.anthropic import AnthropicModel
 from server.app import get_app
 from server.tools import files, git, agents
@@ -49,7 +49,8 @@ async def editor_run(prompt: str, message_history: List[ModelMessage]) -> str:
         system_prompt=_sys_prompt_with_dirs(),
         tools=_get_all_tools()
     )
-    result = await agent.run(prompt, message_history=message_history)
+    usage_limits = UsageLimits(request_limit=200)
+    result = await agent.run(prompt, message_history=message_history, usage_limits=usage_limits)
     message_history.extend(result.new_messages())
     return result.output
 
@@ -76,8 +77,9 @@ async def editor_run_stream(prompt: str, message_history: List[ModelMessage]) ->
         system_prompt=_sys_prompt_with_dirs(),
         tools=_get_all_tools()
     )
+    usage_limits = UsageLimits(request_limit=200)
     
-    async for event in agent.run_stream_events(prompt, message_history=message_history):
+    async for event in agent.run_stream_events(prompt, message_history=message_history, usage_limits=usage_limits):
         if isinstance(event, PartStartEvent):
             if isinstance(event.part, TextPart):
                 yield ("chunk", event.part.content)

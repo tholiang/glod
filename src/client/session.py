@@ -12,8 +12,8 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 
-from .agent_client import AgentClient, StreamEvent, EventType
-from ..server_manager import ServerManager
+from client.agent_client import AgentClient, StreamEvent, EventType
+from server_manager import ServerManager
 
 
 class ClientSession:

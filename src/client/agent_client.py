@@ -101,7 +101,8 @@ class AgentClient:
             
             data = response.json()
             output = data.get("output", "")
-            self.message_history = data.get("message_history", "")
+            if data.get("message_history", "") != "":
+                self.message_history = data.get("message_history", "")
             return output
         
         except httpx.ConnectError as e:

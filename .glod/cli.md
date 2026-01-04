@@ -1,43 +1,41 @@
-# TUI Interface
+# CLI Interface
 
-Fullscreen terminal UI using Rich's Live layout and Layout components.
+Uses Typer + Rich for beautiful, modern terminal UI.
 
 ## Features
 
-- **Fullscreen editor** - Runs as standalone window, not in bash shell
-- **Rich formatted output** - Colors, panels for visual hierarchy
-- **Message history** - Scrollable conversation display with agent/user distinction
-- **Multi-line input** - Input area supporting multiple lines of text
-- **Real-time status** - Server health, message count, allowed directories
-- **Status messages** - Green checkmarks for success, red X for errors, blue info icons
-- **Streaming responses** - Agent responses appear in real-time
+- **Rich formatted output**: Colors, panels, tables for visual hierarchy
+- **Typer commands**: Structured command handling with validation
+- **Styled prompts**: Cyan colored `>` prompt with clear visual feedback
+- **Status messages**: Green checkmarks for success, red X for errors, blue info icons
+- **Distinct tool display**: Tool calls and results visually separated from agent response
+- **Tool phase tracking**: Yellow "Tool Calls" panel header, Cyan "Response" panel header
+- **Help tables**: Commands displayed in formatted tables
 
-## Layout Panels
+## Display Components
 
-- **Header** - App title and processing indicator
-- **Messages** - Last 20 messages shown with scrolling
-- **Status** - Real-time indicators for server, message count, directories
-- **Input** - Multi-line text input (up to 5 lines visible)
-- **Footer** - Quick command reference
+### Status Functions
+- `print_success()` - Green checkmark + message
+- `print_error()` - Red X + message
+- `print_info()` - Blue info icon + message
+- `print_welcome()` - Cyan title panel on startup
+- `print_help()` - Formatted command table
 
-## Commands
+### Tool Call Rendering
+Tool calls and results flow through event handlers in `_entry()`:
 
-All commands are prefixed with `/`:
+- `on_tool_phase_start()` - Yellow panel: "🔧 Tool Calls"
+- `on_tool_call(content)` - Yellow arrow `→` with cyan tool name and args
+## Command Handling
 
-- `/help` - Show all available commands
-- `/clear` - Clear message history
-- `/allow <path>` - Add directory to allowed file access paths
-- `/server start|stop|restart|status` - Control agent server
-- `/exit` - Exit GLOD
+Commands prefixed with `/` are handled via `_command()`. Returns 0 to continue, 1 to exit.
 
-Server control:
-- Validates directory existence before adding via `/allow`
+Server control uses `_handle_server_command()` for start/stop/restart/status.
+
+Directory allowlist managed client-side via `/allow <dir>` command:
+- Validates directory exists before adding
 - Maintains local list of allowed directories
-- Syncs with agent on startup
+- Syncs with agent on each request
 
-## Implementation
-
-- Uses `GlodTUIEditor` class from `src/tui_editor.py`
-- Async event handlers for streaming responses
-- Non-blocking input via executor to prevent display freezing
+History and directories synced with `_sync_allowed_dirs()`.
 

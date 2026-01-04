@@ -2,13 +2,9 @@
 
 Agent runs on FastAPI server, streams responses as Server-Sent Events (SSE).
 
-## Message History Format
+## Event Types
 
-Message history is serialized using `ModelMessagesTypeAdapter` from pydantic-ai:
-- Empty history: empty string `""`
-- Non-empty: JSON bytes decoded to UTF-8 string
-- Deserialization validates against Pydantic model for tagged union `list[ModelRequest|ModelResponse]`
-- Server is stateless; all history managed client-side and round-tripped in requests/responses
+Streaming generator in `editor_run_stream()` yields `(event_type, content)` tuples:
 
 - `"chunk"` - Response text segments (PartStartEvent, PartDeltaEvent)
 - `"tool_call"` - Tool invocation: `tool_name(args)` (FunctionToolCallEvent)

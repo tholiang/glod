@@ -1,26 +1,75 @@
 """
+
 GLOD Fullscreen TUI Editor
 
 Provides a fullscreen text-based interface for GLOD using Rich.
+
 Features:
-- Message history display with scrolling
+
+- Message history display with scrolling (keyboard + mouse wheel)
+
 - Real-time response streaming
+
 - Command palette with /help, /clear, /allow, /server commands
+
 - Server status indicator
+
 """
+
 import asyncio
+import sys
 from pathlib import Path
 
 from rich.console import Console
+
 from rich.layout import Layout
+
 from rich.panel import Panel
+
 from rich.live import Live
 
 from client import ClientSession, StreamEvent, EventType
+
 from util import get_console
 
 
 
+class GlodTUIEditor:
+    
+    def _enable_mouse_support(self) -> None:
+        """Enable mouse wheel support in terminal"""
+        if sys.platform != "win32":
+            # Enable mouse tracking for Unix-like systems
+            sys.stdout.write("\x1b[?1000h")  # Enable mouse reporting
+            sys.stdout.write("\x1b[?1015h")  # Enable extended mouse reporting
+            sys.stdout.flush()
+    
+    def _disable_mouse_support(self) -> None:
+        """Disable mouse wheel support in terminal"""
+        if sys.platform != "win32":
+            # Disable mouse tracking
+            sys.stdout.write("\x1b[?1000l")
+            sys.stdout.write("\x1b[?1015l")
+    
+    def _parse_mouse_input(self, input_str: str) -> str | None:
+        """Parse mouse wheel input sequences and return scroll direction
+        
+        Mouse wheel sequences:
+        - Wheel up: ESC[64M or similar mouse events
+        - Wheel down: ESC[65M or similar mouse events
+        """
+        # Check for mouse scroll up (typically button 4 or 64)
+        if any(x in input_str for x in ['64', 'M', 'scroll_up', 'wheel_up']):
+            return 'up'
+        # Check for mouse scroll down (typically button 5 or 65)
+        if any(x in input_str for x in ['65', 'L', 'scroll_down', 'wheel_down']):
+            return 'down'
+        return None
+
+            sys.stdout.flush()
+
+    
+    def __init__(self, project_root: Path | None = None):
         self.console = get_console()
         self.session = ClientSession(project_root=project_root)
         
@@ -76,10 +125,10 @@ from util import get_console
             self.console.print("[red]Error in TUI loop: [/red]"+str(e))
         finally:
             self.console.clear()
-    
     def _prompt_for_scrolling(self) -> None:
         """Prompt user to scroll through messages"""
         # Build all message lines
+
         lines = []
         for role, content in self.messages:
             if role == "user":
@@ -108,49 +157,42 @@ from util import get_console
             # Display current view
             visible = lines[self.scroll_offset:self.scroll_offset + self.message_box_height - 3]
             
-            header = "🔮 GLOD AI Editor [dim](Scroll Mode)[/dim]"
-            server_status = "🟢 Server Running" if self.session.is_server_running() else "🔴 Server Offline"
-            allowed_text = f"Allowed: {len(self.session.allowed_dirs)} dir(s)"
             
-            scroll_pct = int((self.scroll_offset / max_scroll) * 100) if max_scroll > 0 else 100
-            scroll_indicator = f" [dim]({self.scroll_offset+1}/{len(lines)}) {scroll_pct}%[/dim]"
-            
-            layout = Layout()
-            layout.split_column(
-                Layout(Panel(header, style="cyan", padding=(0, 1)), size=3),
-                Layout(Panel(f"{server_status}  •  {allowed_text}", style="dim white", padding=(0, 1)), size=3),
-                Layout(Panel("\n".join(visible), style="blue", padding=(0, 1), 
-                           title=f"Messages{scroll_indicator}"), name="messages"),
-                Layout(Panel("[dim]Commands: u/up/↑ • d/down/↓ • t/top • b/bottom • q/quit/enter[/dim]", 
-                           style="dim", padding=(0, 1)), size=3),
-            )
-            
-            self.console.print(layout)
-            
-            # Get scroll command
+            # Get scroll command (keyboard + mouse wheel)
             try:
+                self._enable_mouse_support()
                 cmd = self.console.input("[dim]Scroll:[/dim] ").strip().lower()
-                if cmd in ['q', 'quit', 'exit', '']:
+                self._disable_mouse_support()
+                
+                # Check for mouse wheel input first
+                mouse_dir = self._parse_mouse_input(cmd)
+                if mouse_dir:
+                    if mouse_dir == 'up':
+                        self.scroll_offset = max(0, self.scroll_offset - 5)
+                    else:  # down
+                        self.scroll_offset = min(max_scroll, self.scroll_offset + 5)
+                # Handle keyboard commands
+                elif cmd in ['q', 'quit', 'exit', '']:
                     scrolling = False
-                elif cmd in ['u', 'up']:
+                elif cmd in ['u', 'up', '↑']:
                     self.scroll_offset = max(0, self.scroll_offset - 3)
-                elif cmd in ['d', 'down']:
+                elif cmd in ['d', 'down', '↓']:
                     self.scroll_offset = min(max_scroll, self.scroll_offset + 3)
                 elif cmd in ['t', 'top']:
                     self.scroll_offset = 0
                 elif cmd in ['b', 'bottom']:
                     self.scroll_offset = max_scroll
             except (EOFError, KeyboardInterrupt):
+                self._disable_mouse_support()
                 scrolling = False
 
+                scrolling = False
 
-                    self.scroll_offset = max_scroll
-                else:
-                    continue
-            except EOFError:
-                break
-            except KeyboardInterrupt:
-                break
+            except (EOFError, KeyboardInterrupt):
+                scrolling = False
+
+                scrolling = False
+    
     def _render_screen(self) -> Layout:
         """Render the complete screen as a Layout with scrollable messages"""
         # Build message display lines
@@ -209,45 +251,6 @@ from util import get_console
             Layout(Panel(messages_content, style="blue", padding=(0, 1), title=f"Messages{scroll_indicator}"), name="messages"),
             Layout(Panel("[dim]/help • /clear • /allow <path> • /server [start|stop|restart|status] • /exit[/dim]", style="dim", padding=(0, 1)), name="footer", size=3),
         )
-        
-        return layout
-
-        header_text = "🔮 GLOD AI Editor"
-        if self.is_processing:
-            header_text += " [yellow]⏳ Processing...[/yellow]"
-        
-        # Status bar
-        server_status = "🟢 Server Running" if self.session.is_server_running() else "🔴 Server Offline"
-        allowed_dirs_text = f"Allowed: {len(self.session.allowed_dirs)} dir(s) | Messages: {len(self.messages)}"
-        
-        # Scrolling indicator
-        scroll_indicator = ""
-        if len(lines) > self.message_box_height - 3:
-            progress = int((self.scroll_offset / max_scroll) * 10) if max_scroll > 0 else 10
-            scroll_indicator = f" [dim]({self.scroll_offset}/{len(lines)}) ↑/↓ to scroll[/dim]"
-        
-        # Create layout
-        layout = Layout()
-        layout.split_column(
-            Layout(Panel(header_text, style="cyan", padding=(0, 1)), name="header", size=3),
-            Layout(Panel(f"{server_status}  •  {allowed_dirs_text}", style="dim white", padding=(0, 1)), name="status", size=3),
-            Layout(Panel(messages_content, style="blue", padding=(0, 1), title=f"Messages{scroll_indicator}"), name="messages"),
-            Layout(Panel("[dim]/help • /clear • /allow <path> • /server [start|stop|restart|status] • /exit[/dim]", style="dim", padding=(0, 1)), name="footer", size=3),
-        )
-        
-        return layout
-
-        allowed_dirs_text = f"Allowed: {len(self.session.allowed_dirs)} dir(s) | Messages: {len(self.messages)}"
-        
-        # Create layout
-        layout = Layout()
-        layout.split_column(
-            Layout(Panel(header_text, style="cyan", padding=(0, 1)), name="header", size=3),
-            Layout(Panel(f"{server_status}  •  {allowed_dirs_text}", style="dim white", padding=(0, 1)), name="status", size=3),
-            Layout(Panel(messages_content, style="blue", padding=(0, 1), title="Messages"), name="messages"),
-            Layout(Panel("[dim]/help • /clear • /allow <path> • /server [start|stop|restart|status] • /exit[/dim]", style="dim", padding=(0, 1)), name="footer", size=3),
-        )
-        
         return layout
     
     async def _send_message(self, message: str) -> None:

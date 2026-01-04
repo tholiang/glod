@@ -1,17 +1,31 @@
 """
+
 GLOD - AI Code Editor
 
 Entrypoint for the GLOD CLI application.
+Can run either simple CLI (default) or original CLI based on --cli flag.
 """
 import asyncio
+import sys
+from pathlib import Path
 from cli import CLI
+from tui_editor import GlodTUIEditor
 
 
 def main():
-    """Main entrypoint for the GLOD CLI"""
+    """Main entrypoint for the GLOD CLI/TUI"""
+    # Check if --cli flag is provided
+    use_cli = "--cli" in sys.argv
+    
     try:
-        cli = CLI()
-        asyncio.run(cli.run_interactive())
+        if use_cli:
+            # Run simple CLI (default)
+            editor = CLI(project_root=Path.cwd())
+            asyncio.run(editor.run())
+        else:
+            # Run fullscreen TUI
+            editor = GlodTUIEditor(project_root=Path.cwd())
+            asyncio.run(editor.run())
     except KeyboardInterrupt:
         pass
 

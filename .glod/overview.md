@@ -3,6 +3,7 @@
 Client-server AI code editor. Agent runs on FastAPI (port 8000), client communicates via HTTP RPC. Message history stored client-side.
 
 ## Components
+
 - **Entry Point** (`src/main.py`) - Initializes CLI and runs interactive loop
 - **CLI Handler** (`src/cli.py`) - User interaction and output presentation (Rich formatting)
 - **Client Session** (`src/client/session.py`) - Session management, server lifecycle, command routing
@@ -14,8 +15,8 @@ Client-server AI code editor. Agent runs on FastAPI (port 8000), client communic
 
 ```
 User Input → CLI (presentation) → ClientSession (business logic) → AgentClient (HTTP) → Agent → Claude
-                                           ↓
-                                   Message history
+                                          ↓
+                                  Message history
 ```
 
 ## Architecture
@@ -51,11 +52,5 @@ Request format: `{prompt: str, message_history: str}`
 - Agent is stateless; all history on client
 - Directory allowlist validated client-side before sending to agent
 - HTTP timeout: 300s
-- API key in `anthropic_api_key.txt`
 - Runs from `src/` directory
-
-- Agent is stateless; all history on client
-- Runs from `src/` directory
-- HTTP timeout: 300s
-- API key in `anthropic_api_key.txt`
 

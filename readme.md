@@ -1,8 +1,6 @@
 # GLOD - AI Code Editor
 
-A client-server AI code editor where you interact with an AI assistant to edit code. The agent runs as a separate FastAPI server (HTTP RPC), client communicates via REST API. Message history is stored client-side, making the agent stateless and restartable.
-
-(largely made by itself)
+A client-server AI code editor where you interact with Claude AI to edit code. The agent runs as a FastAPI server (HTTP RPC), client communicates via REST API. Message history is stored client-side, making the agent stateless and restartable.
 
 ## Quick Start
 
@@ -13,7 +11,7 @@ pip install -r requirements.txt
 
 ### Terminal 1: Start Agent Server
 ```bash
-python main.py /server start
+python src/main.py /server start
 ```
 
 You should see:
@@ -23,7 +21,7 @@ You should see:
 
 ### Terminal 2: Start Client
 ```bash
-python main.py
+python src/main.py
 ```
 
 You should see:
@@ -32,57 +30,6 @@ You should see:
 Type /help for commands.
 
 >
-```
-
-### Example Usage
-```
-> Add a docstring to the Client class in main.py
-[Agent processes and responds...]
-
-> Show me the file tools available
-[Agent lists the tools...]
-
-> /allow /path/to/directory
-Directory added to allowlist
-
-> /clear
-Message history cleared.
-
-## Key Features
-
-✅ **HTTP RPC** - Clean REST API instead of subprocess communication  
-✅ **Client-Side History** - Message history stays with the client  
-✅ **Stateless Agent** - Kill and restart anytime without losing context  
-✅ **Client-Side Allowlist** - Directory access managed and validated on client  
-✅ **Easy to Test** - Use curl or Swagger UI at `http://127.0.0.1:8000/docs`  
-✅ **Type-Safe** - Proper use of pydantic-ai and type hints  
-✅ **Extensible** - Add new endpoints easily  
-✅ **Streaming** - Real-time response streaming via Server-Sent Events
-
-## File Structure
-
-```
-glod/
-├── src/
-│   ├── main.py                 # CLI client
-│   ├── client_agent.py         # HTTP client wrapper
-│   ├── client_lib.py           # Rich formatting utilities
-│   ├── server_manager.py       # Subprocess manager for server
-│   ├── server/
-│   │   ├── agent_server.py     # FastAPI server
-│   │   └── agents/
-│   │       └── editor.py       # Agent implementation
-│   └── tools/
-│       └── files.py            # File manipulation tools
-├── .glod/                      # Agent documentation
-│   ├── overview.md
-│   ├── cli.md
-│   ├── agent_streaming.md
-│   ├── client_lib.md
-│   └── subagents.md
-├── requirements.txt
-├── readme.md
-└── setup.py
 ```
 
 ## Commands
@@ -98,60 +45,45 @@ glod/
 > /server status      # Check server status
 ```
 
-## Testing the Agent
+## Key Features
 
-While the server is running:
+✅ **HTTP RPC** - Clean REST API instead of subprocess communication  
+✅ **Client-Side History** - Message history stays with the client  
+✅ **Stateless Agent** - Kill and restart anytime without losing context  
+✅ **Client-Side Allowlist** - Directory access managed and validated on client  
+✅ **Streaming** - Real-time response streaming via Server-Sent Events  
+✅ **Type-Safe** - Proper use of pydantic-ai and type hints  
+✅ **Easy to Test** - Use curl or Swagger UI at `http://127.0.0.1:8000/docs`
 
-```bash
-## Development
+## File Structure
 
-### Adding a New Agent Endpoint
-
-1. Add endpoint in `src/server/agent_server.py`:
-```python
-@server.post("/new-endpoint")
-async def new_endpoint(request: MyRequest) -> MyResponse:
-    # Your code here
-    return MyResponse(...)
 ```
-
-2. Add client method in `src/client_agent.py`:
-```python
-async def new_method(self, data: str) -> dict:
-    response = await self.client.post(f"{self.base_url}/new-endpoint", json={...})
-    return response.json()
+glod/
+├── src/
+│   ├── main.py                      # CLI entrypoint
+│   ├── cli.py                       # CLI interface (Rich formatting)
+│   ├── server_manager.py            # Subprocess manager for server
+│   ├── client/
+│   │   ├── agent_client.py          # HTTP RPC client
+│   │   └── session.py               # Session management
+│   ├── server/
+│   │   ├── agent_server.py          # FastAPI server
+│   │   ├── agents/
+│   │   │   └── editor.py            # Agent implementation
+│   │   └── tools/
+│   │       ├── files.py             # File manipulation tools
+│   │       ├── git.py               # Git tools
+│   │       └── agents.py            # Subagent spawning
+│   └── util.py                      # Formatting utilities
+├── .glod/                           # Agent documentation
+│   ├── overview.md                  # Architecture
+│   ├── cli.md                       # CLI interface
+│   ├── agent_streaming.md           # Streaming implementation
+│   └── subagents.md                 # Subagent spawning
+├── requirements.txt
+├── readme.md
+└── setup.py
 ```
-
-### Adding a New Tool
-
-1. Create tool function in `src/tools/files.py` with proper type hints
-2. Register in agent via `@tool` decorator in `src/server/agents/editor.py`
-3. Tool will be available in agent context automatically
-
-### Running with Auto-Reload
-
-```bash
-# Start client (auto-connects to server)
-python main.py
-
-# In another terminal, restart server with changes
-python main.py /server restart
-```
-
-## Troubleshooting
-
-**"Could not connect to agent server"**
-- Start the server: `python main.py /server start`
-
-**"Server returned 500"**
-- Check the server logs in the terminal where it's running
-
-**Agent crashed**
-- Restart it: `python main.py /server restart`
-- Message history is preserved on the client
-
-**Want to see API docs**
-- Open `http://127.0.0.1:8000/docs` while server is running
 
 ## Project Root
 
@@ -162,76 +94,53 @@ cd /path/to/your/project
 python /path/to/glod/src/main.py
 ```
 
-## Documentation
-
-- **[.glod/overview.md](.glod/overview.md)** - Architecture and components
-- **[.glod/cli.md](.glod/cli.md)** - CLI interface details
-- **[.glod/agent_streaming.md](.glod/agent_streaming.md)** - Streaming implementation
-- **[.glod/client_lib.md](.glod/client_lib.md)** - Client library utilities
-
-## License
-
-MIT
-6. **Client** displays output and stores it in local message history
-
-Key insight: The agent is **completely stateless**. All conversation history is maintained on the client side. This allows you to:
-- Restart the agent anytime (`python -m agents.agent_server`)
-- Update the agent code and restart without losing context
-- Scale to multiple agents
-- Move the agent to a different machine
-
 ## Development
+
+### Adding a New Agent Tool
+
+1. Create tool function in `src/server/tools/` with proper type hints
+2. Register via `@tool` decorator in `src/server/agents/editor.py`
+3. Tool will be available in agent context automatically
 
 ### Adding a New Agent Endpoint
 
-1. Add endpoint in `agents/agent_server.py`:
+1. Add endpoint in `src/server/agent_server.py`:
 ```python
-@app.post("/new-endpoint")
+@server.post("/new-endpoint")
 async def new_endpoint(request: MyRequest) -> MyResponse:
-    # Your code here
     return MyResponse(...)
 ```
 
-2. Add client method in `client_agent.py`:
+2. Add client method in `src/client/agent_client.py`:
 ```python
 async def new_method(self, data: str) -> dict:
     response = await self.client.post(f"{self.base_url}/new-endpoint", json={...})
     return response.json()
 ```
 
-### Running with Reload
-```bash
-python -m agents.agent_server --reload
-```
-
 ## Troubleshooting
 
 **"Could not connect to agent server"**
-- Start the agent: `python -m agents.agent_server`
+- Start the server: `python src/main.py /server start`
 
 **"Server returned 500"**
-- Check the agent server terminal for error messages
+- Check the server logs in the terminal where it's running
 
 **Agent crashed**
-- Restart it: `python -m agents.agent_server`
+- Restart it: `python src/main.py /server restart`
+- Message history is preserved on the client
 
 **Want to see API docs**
 - Open `http://127.0.0.1:8000/docs` while server is running
 
-## Future Enhancements
+## Documentation
 
-- Add message history persistence to disk
-- Add authentication to the agent server
-- Run multiple agent instances
-- Deploy agent to cloud
-- Build a web UI
-- Add streaming responses
-- Add function calling for complex tools
+- **[.glod/overview.md](.glod/overview.md)** - Architecture and components
+- **[.glod/cli.md](.glod/cli.md)** - CLI interface details
+- **[.glod/agent_streaming.md](.glod/agent_streaming.md)** - Streaming implementation
+- **[.glod/subagents.md](.glod/subagents.md)** - Subagent spawning
 
 ## License
 
 MIT
-
-coding agent
-
 see `docs/`

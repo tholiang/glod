@@ -1,14 +1,17 @@
 """
+
 GLOD Simple CLI Editor
 
 Provides a simple text-based interface for GLOD using Rich.
 
 Features:
+
 - Sequential output (no panels or layouts)
+
 - Real-time response streaming
+
 - Command palette with /help, /clear, /allow, /server commands
-
-
+"""
 import asyncio
 from pathlib import Path
 
@@ -17,9 +20,6 @@ from rich.console import Console
 from client import ClientSession, StreamEvent, EventType
 
 from util import get_console
-
-
-
 
 class GlodTUIEditor:
     def __init__(self, project_root: Path | None = None):
@@ -193,21 +193,21 @@ class GlodTUIEditor:
         elif subcommand == "status":
             await self._show_status()
         
-        else:
-            self.console.print(f"[red]Unknown server command:[/red] {subcommand}\n")
-    
-    async def _show_status(self) -> None:
-        """Display server and session status"""
-        server_status = "🟢 Running" if self.session.is_server_running() else "🔴 Offline"
-        pid = self.session.get_server_pid() if self.session.is_server_running() else None
-        
-        self.console.print(f"[cyan]Server:[/cyan] {server_status}" + (f" (PID: {pid})" if pid else "") + "\n")
-        self.console.print(f"[cyan]Allowed directories:[/cyan] {len(self.session.allowed_dirs)}\n")
-        self.console.print(f"[cyan]Messages in history:[/cyan] {len(self.messages)}\n")
-    
-    async def _show_help(self) -> None:
-        """Display help"""
-        help_text = """[bold cyan]Available Commands:[/bold cyan]
+         else:
+             self.console.print(f"[red]Unknown server command:[/red] {subcommand}\n")
+     
+     async def _show_status(self) -> None:
+         """Display server and session status"""
+         server_status = "🟢 Running" if self.session.is_server_running() else "🔴 Offline"
+         pid = self.session.get_server_pid() if self.session.is_server_running() else None
+         
+         self.console.print(f"[cyan]Server:[/cyan] {server_status}" + (f" (PID: {pid})" if pid else "") + "\n")
+         self.console.print(f"[cyan]Allowed directories:[/cyan] {len(self.session.allowed_dirs)}\n")
+         self.console.print(f"[cyan]Messages in history:[/cyan] {len(self.messages)}\n")
+     
+     async def _show_help(self) -> None:
+         """Display help"""
+         help_text = """[bold cyan]Available Commands:[/bold cyan]
 
 [yellow]/allow <path>[/yellow]        Add a directory to allowed file access paths
 [yellow]/clear[/yellow]              Clear message history
@@ -219,5 +219,6 @@ class GlodTUIEditor:
 [yellow]/help[/yellow]               Show this help message
 [yellow]/exit[/yellow]               Exit GLOD
 """
-        
+         self.console.print(help_text)
+
         

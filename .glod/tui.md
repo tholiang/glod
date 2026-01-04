@@ -1,45 +1,74 @@
 # Fullscreen TUI Editor
 
-`src/tui_editor.py` implements a fullscreen terminal UI using Rich layouts and message streaming.
+`src/tui_editor.py` implements a fullscreen terminal UI using Rich layouts and message streaming. The TUI is an alternative interface to the standard CLI.
 
-## Architecture
+## Class: GlodTUIEditor
 
-Pure consumption of AsyncGenerators from `ClientSession`:
-- `ClientSession` returns `AsyncGenerator[str, None]` for all operations
-- `GlodTUIEditor` consumes generators and formats output for display
-- No business logic in TUI - it's purely a display layer
-- No console side effects in core logic
+### Initialization
+- `__init__(project_root)` - Creates ClientSession for business logic, initializes message history
 
-## Features
+### Main Loop
+- `run()` - Async main loop:
+  1. Calls `session.initialize()` to start server
+  2. Displays welcome message
+  3. Prompts for user input
+  4. Routes to `_send_message()` or `_handle_command()`
+  5. Exits on `/exit` command
 
-- **Message interface** - Scrollable user/agent message history
-- **Real-time streaming** - Agent responses display live as chunks arrive
-- **Status bar** - Server status, directory count, message count
-- **Commands** - `/help`, `/clear`, `/allow`, `/server`, `/exit`
-- **Status formatting** - Color-coded Rich markup for status messages
+### Message Streaming
+- `_send_message(msg)` - Sends prompt via `session.send_prompt_stream()`:
+  - Adds user message to history
+  - Uses Live display for real-time streaming
+  - Consumes StreamEvent objects from async generator
+  - Handles CHUNK events to build response
+  - Adds final response to message history
 
-## Implementation
+### Command Handling
+- `_handle_command(cmd)` - Routes `/` commands:
+  - `/exit` - Set exit flag
+  - `/help` - Display help text in messages
+  - `/clear` - Clear history via `session.clear_history()`
+  - `/allow <path>` - Call `session.add_allowed_dir()`
+  - `/server [start|stop|restart|status]` - Delegate to `_handle_server_command()`
 
-Key methods:
+- `_handle_server_command(subcmd)` - Server lifecycle:
+  - `start` - Call `session.start_server()`
+  - `stop` - Call `session.stop_server()`
+  - `restart` - Call `session.restart_server()`, sync dirs
+  - `status` - Call `session.is_server_running()`, `get_server_pid()`
 
-- `_send_message(msg)` - Stream agent response to message history
-- `_handle_command(cmd)` - Route `/commands` to session generators
-- `_format_status_message(msg)` - Apply Rich markup (✓→green, ℹ→blue, Error:→red)
-- `_show_help()` - Display help text in message history
+### Display Rendering
+- `_render_screen()` - Returns Layout with:
+  - Header: Editor title with processing indicator
+  - Status: Server status and allowed directory count
+  - Messages: Message history with streaming response
+  - Footer: Command help
 
-Command flow:
+- `_format_status_message(msg)` - Applies Rich markup based on message prefix (unused, kept for compatibility)
+
+- `_show_help()` - Displays command list in message history
+
+## Event Flow
+
 ```
 User input → _handle_command()
-  → session.handle_allow_dir_command() / handle_server_command()
-  → Consume AsyncGenerator[str, None]
-  → _format_status_message() adds Rich markup
-  → Append to message history
+  → session.add_allowed_dir() / send_prompt_stream() / server methods
+  → Consume return values and StreamEvent objects
+  → Format and append to message history
+  → Display via _render_screen() and Rich Live
 ```
 
-## Design
+## Integration with ClientSession
 
-- **Thin display layer** - All logic delegated to ClientSession
-- **Pure generators** - No print/console calls in core code
-- **Rich formatting** - Status messages colored based on type
-- **Streaming UI** - Live display updates during agent response streaming
+The TUI uses these ClientSession methods:
+- `initialize()` - Start server, health check
+- `send_prompt_stream()` - Yields StreamEvent objects
+- `add_allowed_dir()` - Returns status dict
+- `clear_history()` - Sync agent history
+- `start_server()`, `stop_server()`, `restart_server()` - Server lifecycle
+- `is_server_running()`, `get_server_pid()` - Server status
+- `sync_allowed_dirs()` - Re-sync after restart
+- `allowed_dirs` - List of allowed directories (read-only)
+
+The TUI never imports AgentClient directly; all communication is through ClientSession.
 

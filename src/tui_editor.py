@@ -4,7 +4,6 @@ GLOD Fullscreen TUI Editor
 Provides a fullscreen text-based interface for GLOD using Rich.
 Features:
 - Message history display with scrolling
-- Multi-line input area
 - Real-time response streaming
 - Command palette with /help, /clear, /allow, /server commands
 - Server status indicator
@@ -17,16 +16,16 @@ from rich.layout import Layout
 from rich.panel import Panel
 from rich.live import Live
 
-from client_lib import ClientSession
+from client import ClientSession, StreamEvent, EventType
 from util import get_console
 
 
 class GlodTUIEditor:
     """Fullscreen TUI editor for GLOD"""
     
-    def __init__(self, session: ClientSession):
+    def __init__(self, project_root: Path = None):
         self.console = get_console()
-        self.session = session
+        self.session = ClientSession(project_root=project_root)
         
         # Message history: list of (role, content) tuples
         # role: "user" or "agent"
@@ -38,6 +37,11 @@ class GlodTUIEditor:
     async def run(self) -> None:
         """Main TUI loop"""
         try:
+            # Initialize session
+            if not await self.session.initialize():
+                self.console.print("[red]✗ Failed to initialize agent server[/red]")
+                return
+            
             # Clear screen and show welcome
             self.console.clear()
             self.console.print(Panel("🔮 [bold cyan]GLOD AI Editor[/bold cyan] - Interactive Mode", style="cyan", padding=(0, 1)))
@@ -93,7 +97,7 @@ class GlodTUIEditor:
             header_text += " [yellow]⏳ Processing...[/yellow]"
         
         # Status bar
-        server_status = "🟢 Server Running" if self.session.server_manager.is_running() else "🔴 Server Offline"
+        server_status = "🟢 Server Running" if self.session.is_server_running() else "🔴 Server Offline"
         allowed_dirs_text = f"Allowed: {len(self.session.allowed_dirs)} dir(s) | Messages: {len(self.messages)}"
         
         # Create layout
@@ -117,30 +121,35 @@ class GlodTUIEditor:
         self.is_processing = True
         self.streaming_response = ""
 
-        if self.session.agent_client is None:
-            self.messages.append(("agent", "[red]✗ Agent client is not initialized[/red]"))
-            return
-        
         try:
-            # Format message history for agent
-            history_text = "\n".join([
-                f"{'User' if role == 'user' else 'Agent'}: {content}"
-                for role, content in self.messages[:-1]  # Exclude the current message
-            ])
-            
             # Create Live display for streaming
             display = self._render_screen()
             with Live(display, console=self.console, refresh_per_second=20) as live:
                 try:
-                    # Stream response
-                    async for chunk in self.session.agent_client.stream_run(
-                        prompt=message,
-                        message_history=history_text
-                    ):
-                        self.streaming_response += chunk
-                        # Update display with streaming response
-                        display = self._render_screen()
-                        live.update(display)
+                    # Stream response events
+                    async for event in self.session.send_prompt_stream(message):
+                        if event.type == EventType.CHUNK:
+                            self.streaming_response += event.content
+                            # Update display with streaming response
+                            display = self._render_screen()
+                            live.update(display)
+                        
+                        elif event.type == EventType.COMPLETE:
+                            # Message history updated in agent client
+                            pass
+                        
+                        elif event.type == EventType.TOOL_PHASE_START:
+                            # Could show tool phase indicator if desired
+                            pass
+                        
+                        elif event.type == EventType.TOOL_PHASE_END:
+                            # Could hide tool phase indicator if desired
+                            pass
+                        
+                        elif event.type == EventType.ERROR:
+                            self.streaming_response += f"[red]Error: {event.content}[/red]"
+                            display = self._render_screen()
+                            live.update(display)
                     
                     # Add final response to messages
                     if self.streaming_response:
@@ -194,24 +203,66 @@ class GlodTUIEditor:
         
         elif command == "clear":
             self.messages.clear()
-            if self.session.agent_client:
-                self.session.agent_client.clear_history()
+            self.session.clear_history()
             self.messages.append(("agent", "[green]✓ Message history cleared[/green]"))
         
         elif command == "allow":
             if len(parts) > 1:
-                async for message in self.session.handle_allow_dir_command(parts[1]):
-                    self.messages.append(("agent", self._format_status_message(message)))
+                result = await self.session.add_allowed_dir(parts[1])
+                if result.get("status") == "ok":
+                    self.messages.append(("agent", f"[green]✓ Added allowed directory: {result.get('path')}[/green]"))
+                else:
+                    self.messages.append(("agent", f"[red]Error: {result.get('message')}[/red]"))
             else:
-                self.messages.append(("agent", "[red]Usage:[/red] /allow <directory_path>"))
+                self.messages.append(("agent", "[yellow]Usage:[/yellow] /allow <directory_path>"))
         
         elif command == "server":
-            async for message in self.session.handle_server_command(parts[1] if len(parts) > 1 else None):
-                self.messages.append(("agent", self._format_status_message(message)))
+            await self._handle_server_command(parts[1] if len(parts) > 1 else None)
         
         else:
             self.messages.append(("agent", f"[red]Unknown command:[/red] /{command}"))
     
+    async def _handle_server_command(self, subcommand: str = None) -> None:
+        """Handle /server commands"""
+        if subcommand is None:
+            self.messages.append(("agent", "[yellow]Usage:[/yellow] /server [start|stop|restart|status]"))
+            return
+        
+        subcommand = subcommand.lower()
+        
+        if subcommand == "start":
+            if self.session.start_server():
+                await asyncio.sleep(1)
+                self.messages.append(("agent", "[green]✓ Agent server started[/green]"))
+            else:
+                self.messages.append(("agent", "[red]✗ Failed to start agent server[/red]"))
+        
+        elif subcommand == "stop":
+            if self.session.stop_server():
+                self.messages.append(("agent", "[green]✓ Agent server stopped[/green]"))
+            else:
+                self.messages.append(("agent", "[red]✗ Failed to stop agent server[/red]"))
+        
+        elif subcommand == "restart":
+            if self.session.restart_server():
+                await asyncio.sleep(1)
+                try:
+                    await self.session.sync_allowed_dirs()
+                except Exception:
+                    pass  # Best effort
+                self.messages.append(("agent", "[green]✓ Agent server restarted[/green]"))
+            else:
+                self.messages.append(("agent", "[red]✗ Failed to restart agent server[/red]"))
+        
+        elif subcommand == "status":
+            if self.session.is_server_running():
+                pid = self.session.get_server_pid()
+                self.messages.append(("agent", f"[green]✓ Agent server is running (PID: {pid})[/green]"))
+            else:
+                self.messages.append(("agent", "[red]✗ Agent server is not running[/red]"))
+        
+        else:
+            self.messages.append(("agent", f"[red]Unknown server command:[/red] {subcommand}"))
     
     async def _show_help(self) -> None:
         """Display help in message history"""
@@ -226,4 +277,4 @@ class GlodTUIEditor:
 [yellow]/exit[/yellow]               Exit GLOD"""
         
         self.messages.append(("agent", help_text))
-
+        
